@@ -14,11 +14,11 @@ from tqdm import tqdm, trange
 from utils import load_dataset
 
 
-def save_checkpoint(run, state, is_best):
-    filename = run.ckpt('last')
+def save_checkpoint(exp, state, is_best):
+    filename = exp.ckpt('last')
     torch.save(state, filename)
     if is_best:
-        best_filename = run.ckpt('best')
+        best_filename = exp.ckpt('best')
         shutil.copyfile(filename, best_filename)
 
 
@@ -138,6 +138,7 @@ def main(args):
 
     if args.resume:
         ckpt = torch.load(exp.ckpt('last'))
+        print('Loaded: {}'.format(exp.ckpt('last')))
         model.load_state_dict(ckpt['model'])
         optimizer.load_state_dict(ckpt['optim'])
         start_epoch = ckpt['epoch'] + 1
@@ -173,14 +174,13 @@ def main(args):
         metrics.update(train_metrics)
         metrics.update(test_metrics)
 
-        if is_best:
-            save_checkpoint(exp, {
-                'epoch': epoch,
-                'params': vars(args),
-                'model': model.state_dict(),
-                'optim': optimizer.state_dict(),
-                'metrics': metrics
-            }, is_best)
+        save_checkpoint(exp, {
+            'epoch': epoch,
+            'params': vars(args),
+            'model': model.state_dict(),
+            'optim': optimizer.state_dict(),
+            'metrics': metrics
+        }, is_best)
 
         exp.push_log(metrics)
         sched_args = metrics['test_acc'] if args.lrschedule == 'plateau' else None
