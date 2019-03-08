@@ -1,0 +1,3 @@
+[submodule "torchdiffeq"]
+	path = torchdiffeq
+	url = https://github.com/rtqichen/torchdiffeq.git
