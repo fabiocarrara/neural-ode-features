@@ -1,4 +1,5 @@
 import argparse
+import os
 
 import matplotlib
 
@@ -142,7 +143,7 @@ def nparams(args):
 def clean(args):
     runs = Experiment.gather(args.run, main='model')
     empty_runs = filter(lambda run: run.log.empty, runs)
-    dirs = [run.run_dir for run in empty_runs]
+    dirs = [run.path for run in empty_runs]
     n_empty_runs = len(dirs)
 
     print("Empty runs found: {}".format(n_empty_runs))
@@ -152,7 +153,9 @@ def clean(args):
         print("Delete them? [y/N] ", end='')
         if input().lower() in ('y', 'yes'):
             for r in dirs:
-                print('rm -rf {}'.format(r))
+                command = 'rm -rf {}'.format(r)
+                print(command)
+                os.system(command)
 
 
 if __name__ == '__main__':
