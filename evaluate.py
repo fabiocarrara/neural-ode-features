@@ -17,73 +17,56 @@ from utils import load_test_data, load_model
 def features(args):
     run = Experiment.from_dir(args.run, main='model')
     print(run)
+    params = next(run.params.itertuples())
 
     features_file = run.path_to('features.h5')
+    results_file = run.path_to('results')
     best_ckpt = run.ckpt('best')
 
-    params = next(run.params.itertuples())
-    if params.model == 'resnet':
-        if os.path.exists(features_file) and os.path.getctime(features_file) >= os.path.getctime(best_ckpt) and not args.force:
-            print('Skipping...')
-            sys.exit(0)
+    dependecy_file = best_ckpt if params.model == 'resnet' else results_file
+
+    if os.path.exists(features_file) and os.path.getctime(features_file) >= os.path.getctime(
+            dependecy_file) and not args.force:
+        print('Skipping...')
+        sys.exit(0)
 
     else:
         results_file = run.path_to('results')
-
-        assert os.path.exists(results_file), 'Results file for this run not found: {}'.format(results_file)
-
-        if os.path.exists(features_file) and os.path.getctime(features_file) >= os.path.getctime(results_file) and not args.force:
-            print('Skipping...')
-            sys.exit(0)
-
-        results = pd.read_csv(results_file)
-        results = results[results.t1 <= 1]
-        t1s = results.t1.sort_values().unique()
-
-    test_data = load_test_data(run)
-    test_loader = DataLoader(test_data, batch_size=params.batch_size, shuffle=False)
 
     model = load_model(run)
     model = model.to(args.device)
     model.eval()
     model.to_features_extractor()
 
-    features = []
     if params.model == 'odenet':
-        y_true = np.concatenate([y.numpy() for _, y in tqdm(test_loader)])
-        with torch.no_grad():
-            for t1 in tqdm(t1s):
-                model.odeblock.t1 = t1
+        assert os.path.exists(results_file), 'Results file for this run not found: {}'.format(results_file)
 
-                t1_features = []
-                for x, _ in tqdm(test_loader):
-                    x = x.to(args.device)
-                    f = model(x).cpu().numpy()
-                    t1_features.append(f)
+        results = pd.read_csv(results_file)
+        results = results[results.t1 <= 1]
+        t1s = results.t1.sort_values().unique()
+        model.odeblock.t1 = t1s.tolist()
+        t1s = np.insert(t1s, 0, 0)  # add 0 at the beginning
 
-                features.append(np.concatenate(t1_features))
+    features = []
+    y_true = []
+    with torch.no_grad():
+        for x, y in tqdm(test_loader):
+            x = x.to(args.device)
+            y_true.append(y.numpy())
 
-        features = np.stack(features)
-        with h5py.File(features_file, 'w') as f:
-            f['features'] = features
-            f['y_true'] = y_true
+            f = model(x)
+            f = f.cpu().numpy()
+
+            features.append(f)
+
+    features = np.concatenate(features, -2)  # concat along batch dimension
+    y_true = np.concatenate(y_true)
+
+    with h5py.File(features_file, 'w') as f:
+        f['features'] = features
+        f['y_true'] = y_true
+        if params.model == 'odenet':
             f['t1s'] = t1s
-
-    else:  # resnet
-        y_true = []
-        with torch.no_grad():
-            for x, y in tqdm(test_loader):
-                x = x.to(args.device)
-                y_true.append(y.numpy())
-                f = model(x).cpu().numpy()
-                features.append(f)
-
-            features = np.concatenate(features)
-            y_true = np.concatenate(y_true)
-
-        with h5py.File(features_file, 'w') as f:
-            f['features'] = features
-            f['y_true'] = y_true
 
 
 def nfe(args):

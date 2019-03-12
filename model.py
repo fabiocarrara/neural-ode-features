@@ -22,12 +22,15 @@ class ODENet(nn.Module):
     def forward(self, x):
         x = self.downsample(x)
         x = self.odeblock(x)
-        x = self.classifier(x)
+        if x.dim() > 4:
+            x = torch.stack([self.classifier(xi) for xi in x])
+        else:
+            x = self.classifier(x)
         return x
 
     def to_features_extractor(self):  # ugly hack
         self.odeblock.return_last_only = False  # returns dynamic @ multiple timestamps
-        # remove last classification layer
+        # remove last classification layer but maintain norm, relu and global avg pooling
         self.classifier.module[-1] = nn.Sequential()
 
     def nfe(self, reset=False):
@@ -52,7 +55,7 @@ class ResNet(nn.Module):
         self.classifier = FCClassifier(n_filters, dropout=dropout)
 
     def to_features_extractor(self):  # ugly hack
-        # remove last classification layer
+        # remove last classification layer but maintain norm, relu and global avg pooling
         self.classifier.module[-1] = nn.Sequential()
 
     def forward(self, x):
@@ -251,7 +254,7 @@ class ODEBlock(nn.Module):
     def __init__(self, n_filters=64, tol=1e-3, adjoint=False, t1=1):
         super(ODEBlock, self).__init__()
         self.odefunc = ODEfunc(n_filters)
-        self.integration_time = torch.tensor([0, t1]).float()
+        self.t1 = t1
         self.tol = tol
         self.odeint = odeint_adjoint if adjoint else odeint
         self.return_last_only = True
