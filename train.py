@@ -5,12 +5,13 @@ import sys
 
 import torch
 import torch.nn.functional as F
-from model import ResNet, ODENet
-from expman import Experiment
 from torch.optim import Adam, SGD
 from torch.optim.lr_scheduler import LambdaLR, ReduceLROnPlateau, CosineAnnealingLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
+
+from expman import Experiment
+from model import ResNet, ODENet
 from utils import load_dataset
 
 
@@ -121,15 +122,16 @@ def main(args):
     test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=False)
 
     if args.model == 'odenet':
-        model = ODENet(in_ch, n_filters=args.filters, downsample=args.downsample, tol=args.tol, adjoint=args.adjoint)
+        model = ODENet(in_ch, n_filters=args.filters, downsample=args.downsample, tol=args.tol, adjoint=args.adjoint,
+                       dropout=args.dropout)
     else:
-        model = ResNet(in_ch, n_filters=args.filters, downsample=args.downsample)
+        model = ResNet(in_ch, n_filters=args.filters, downsample=args.downsample, dropout=args.dropout)
 
     model = model.to(args.device)
     if args.optim == 'sgd':
-        optimizer = SGD(model.parameters(), lr=args.lr, momentum=0.9)
+        optimizer = SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.wd)
     elif args.optim == 'adam':
-        optimizer = Adam(model.parameters(), lr=args.lr)
+        optimizer = Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     # print(train_data)
     # print(test_data)
@@ -158,7 +160,6 @@ def main(args):
 
     progress = trange(start_epoch, args.epochs + 1, initial=start_epoch, total=args.epochs)
     for epoch in progress:
-
         metrics = {'epoch': epoch}
 
         progress.set_postfix({'Best ACC': f'{best_accuracy:.2%}'})
@@ -196,6 +197,8 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--downsample', type=str, choices=('ode', 'residual', 'convolution', 'minimal'),
                         default='residual')
     parser.add_argument('-f', '--filters', type=int, default=64)
+    parser.add_argument('--dropout', type=float, default=0)
+
     parser.add_argument('-e', '--epochs', type=int, default=100)
     parser.add_argument('-b', '--batch-size', type=int, default=128)
     parser.add_argument('--batch-accumulation', type=int, default=1)
@@ -204,6 +207,7 @@ if __name__ == '__main__':
     parser.add_argument('--lrschedule', type=str, choices=('fixed', 'plateau', 'cosine'), default='fixed')
     parser.add_argument('--lrcycle', type=int, default=0)
     parser.add_argument('-p', '--patience', type=int, default=10)
+    parser.add_argument('--wd', type=float, default=0, help='weight decay')
 
     parser.add_argument('--no-cuda', dest='cuda', action='store_false')
     parser.set_defaults(cuda=True)

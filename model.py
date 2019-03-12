@@ -4,7 +4,7 @@ from torchdiffeq import odeint_adjoint, odeint
 
 
 class ODENet(nn.Module):
-    def __init__(self, in_ch, n_filters=64, downsample='residual', tol=1e-3, adjoint=False, t1=1):
+    def __init__(self, in_ch, n_filters=64, downsample='residual', tol=1e-3, adjoint=False, t1=1, dropout=0):
         super(ODENet, self).__init__()
 
         if downsample == 'residual':
@@ -17,15 +17,16 @@ class ODENet(nn.Module):
             self.downsample = ODEDownsample(in_ch, out_ch=n_filters, adjoint=adjoint)
 
         self.odeblock = ODEBlock(n_filters=n_filters, tol=tol, adjoint=adjoint, t1=t1)
-        self.classifier = FCClassifier(in_ch=n_filters)
+        self.classifier = FCClassifier(in_ch=n_filters, dropout=dropout)
 
     def forward(self, x):
         x = self.downsample(x)
         x = self.odeblock(x)
         x = self.classifier(x)
         return x
-    
-    def features(self):  # ugly hack
+
+    def to_features_extractor(self):  # ugly hack
+        self.odeblock.return_last_only = False  # returns dynamic @ multiple timestamps
         # remove last classification layer
         self.classifier.module[-1] = nn.Sequential()
 
@@ -37,7 +38,7 @@ class ODENet(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, in_ch, n_filters=64, downsample='residual'):
+    def __init__(self, in_ch, n_filters=64, downsample='residual', dropout=0):
         super(ResNet, self).__init__()
 
         if downsample == 'residual':
@@ -48,7 +49,11 @@ class ResNet(nn.Module):
             self.downsample = MinimalConvDownsample(in_ch, out_ch=n_filters)
 
         self.features = nn.Sequential(*[ResBlock(n_filters, n_filters) for _ in range(6)])
-        self.classifier = FCClassifier(n_filters)
+        self.classifier = FCClassifier(n_filters, dropout=dropout)
+
+    def to_features_extractor(self):  # ugly hack
+        # remove last classification layer
+        self.classifier.module[-1] = nn.Sequential()
 
     def forward(self, x):
         x = self.downsample(x)
@@ -129,6 +134,7 @@ class ODEDownsample(nn.Module):
         x = self.maxpool(x)
         return x
 
+
 """
     Final FC Module
 """
@@ -136,15 +142,21 @@ class ODEDownsample(nn.Module):
 
 class FCClassifier(nn.Module):
 
-    def __init__(self, in_ch=64):
+    def __init__(self, in_ch=64, dropout=0):
         super(FCClassifier, self).__init__()
-        self.module = nn.Sequential(
-            norm(in_ch),
-            nn.ReLU(inplace=True),
-            nn.AdaptiveAvgPool2d((1, 1)),  # global average pooling
-            Flatten(),
-            nn.Linear(in_ch, 10)
-        )
+
+        layers = [
+                     norm(in_ch),
+                     nn.ReLU(inplace=True),
+                     nn.AdaptiveAvgPool2d((1, 1)),  # global average pooling
+                 ] + (
+                     [nn.Dropout(dropout), ] if dropout else []
+                 ) + [
+                     Flatten(),
+                     nn.Linear(in_ch, 10)
+                 ]
+
+        self.module = nn.Sequential(*layers)
 
     def forward(self, *input):
         return self.module(*input)
@@ -242,11 +254,14 @@ class ODEBlock(nn.Module):
         self.integration_time = torch.tensor([0, t1]).float()
         self.tol = tol
         self.odeint = odeint_adjoint if adjoint else odeint
+        self.return_last_only = True
 
     def forward(self, x):
         self.integration_time = self.integration_time.type_as(x)
         out = self.odeint(self.odefunc, x, self.integration_time, rtol=self.tol, atol=self.tol)
-        return out[1]  # dynamics @ t=t1
+        if self.return_last_only:
+            out = out[1]  # dynamics @ t=t1
+        return out
 
     @property
     def nfe(self):
@@ -262,7 +277,8 @@ class ODEBlock(nn.Module):
 
     @t1.setter
     def t1(self, value):
-        self.integration_time = torch.tensor([0, value]).float()
+        value = [value, ] if not isinstance(value, (list, tuple)) else list(value)
+        self.integration_time = torch.tensor([0, ] + value).float()
 
 
 class Flatten(nn.Module):

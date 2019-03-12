@@ -86,9 +86,9 @@ def load_model(exp, in_ch=None):
 
     if params.model == 'odenet':
         model = ODENet(in_ch, n_filters=params.filters, downsample=params.downsample, tol=params.tol,
-                       adjoint=params.adjoint)
+                       adjoint=params.adjoint, dropout=params.dropout)
     else:
-        model = ResNet(in_ch, n_filters=params.filters, downsample=params.downsample)
+        model = ResNet(in_ch, n_filters=params.filters, downsample=params.downsample, dropout=params.dropout)
 
     checkpoint = torch.load(exp.ckpt())['model']  # get best model
     model.load_state_dict(checkpoint)
