@@ -1,8 +1,38 @@
+import os
+
 import torch
+import torchvision
 from torchvision import datasets
 from torchvision.transforms import transforms
 
 from model import ODENet, ResNet
+
+
+class TinyImageNet200(torchvision.datasets.ImageFolder):
+    def __init__(self, root, download=True, transform=None, target_transform=None, split='train'):
+        self.root = root
+
+        if not self._check_data():
+            assert download, "Data is missing or corrupted. Please provide download=True to download."
+            print('Downloading TinyImageNet-200 dataset ...')
+            raise NotImplementedError("TinyImageNet download not implmented yet, manually download from: "
+                                      "http://cs231n.stanford.edu/tiny-imagenet-200.zip")
+
+        assert split in ('train', 'val', 'test'), "Parameter 'split' must be one of: train, val, test"
+        self.split = split
+        root = os.path.join(root, self.split)
+        super(TinyImageNet200, self).__init__(root, transform=transform, target_transform=target_transform)
+
+    def _check_data(self):
+        if not os.path.exists(self.root):
+            return False
+
+        for split in ('train', 'val', 'test'):
+            split_root = os.path.join(self.root, split)
+            if not os.path.exists(split_root):
+                return False
+
+        return True
 
 
 def load_dataset(args):

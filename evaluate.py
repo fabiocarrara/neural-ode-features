@@ -8,18 +8,21 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from torchvision.transforms import transforms
 from tqdm import tqdm
 
 from expman import Experiment
-from utils import load_test_data, load_model
+from utils import load_test_data, load_model, TinyImageNet200
 
 
 def features(args):
     run = Experiment.from_dir(args.run, main='model')
     print(run)
+
     params = next(run.params.itertuples())
 
-    features_file = run.path_to('features.h5')
+    features_file = 'features.h5' if args.data is None else 'features-{}.h5'.format(args.data)
+    features_file = run.path_to(features_file)
     results_file = run.path_to('results')
     best_ckpt = run.ckpt('best')
 
@@ -30,8 +33,16 @@ def features(args):
         print('Skipping...')
         sys.exit(0)
 
+    if args.data == 'tiny-imagenet-200':
+        transfer_transform = transforms.Compose([
+            transforms.Resize(32),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+        test_data = TinyImageNet200('data/tiny-imagenet-200', split='val', transform=transfer_transform)
     else:
-        results_file = run.path_to('results')
+        test_data = load_test_data(run)
+    test_loader = DataLoader(test_data, batch_size=params.batch_size, shuffle=False)
 
     model = load_model(run)
     model = model.to(args.device)
@@ -213,6 +224,7 @@ if __name__ == '__main__':
 
     parser_features = subparsers.add_parser('features')
     parser_features.add_argument('run')
+    parser_features.add_argument('-d', '--data', default=None, choices=('tiny-imagenet-200',))
     parser_features.set_defaults(func=features)
     args = parser.parse_args()
 
