@@ -105,14 +105,20 @@ def best(args):
     else:
         results = Experiment.collect_all(exps, 'results')
 
-    metric_cols = {'epoch', 't1', 'test_acc', 'test_loss', 'test_nfe', 'test_tol'}
+    metric_cols = {'epoch', 't1', 'test_acc', 'test_loss', 'test_nfe', 'test_tol', 'acc', 'loss'}
     grouping_cols = results.columns.difference(metric_cols).tolist()
 
     idx_acc_max = results.groupby(grouping_cols)['test_acc'].idxmax()
     results = results.loc[idx_acc_max]
 
+    common_params = results.apply(pd.Series.nunique) == 1
+    common_values = results.loc[:, common_params].iloc[0]
+    results = results.loc[:, ~common_params]
+
     with pd.option_context('display.width', None), pd.option_context('max_columns', None):
         print(results.sort_values('test_acc', ascending=False).head(args.n))
+
+    print(common_values)
 
 
 def nfe(args):
