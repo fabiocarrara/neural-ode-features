@@ -338,7 +338,7 @@ def retrieval(args):
             # TODO check and skip
             mean_ap_asym = score(queries[i], features[-1], gt)  # t1 = 1 for db
             mean_ap_sym = score(queries[i], features[i], gt)  # t1 same for queries and db
-            results = {'t1': t1, 'meap_ap_asym': mean_ap_asym, 'mean_ap_sym': mean_ap_sym}
+            results = {'t1': t1, 'mean_ap_asym': mean_ap_asym, 'mean_ap_sym': mean_ap_sym}
             all_results = all_results.append(results, ignore_index=True)
             all_results.to_csv(results_file, index=False)
     else:  # resnet
