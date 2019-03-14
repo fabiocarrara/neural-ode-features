@@ -7,9 +7,10 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
+from sklearn.metrics import average_precision_score
 from torch.utils.data import DataLoader
 from torchvision.transforms import transforms
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
 from expman import Experiment
 from utils import load_test_data, load_model, TinyImageNet200
@@ -204,6 +205,144 @@ def test(args):
             n_evals += 1
 
 
+def accuracy(args):
+    run = Experiment.from_dir(args.run, main='model')
+    print(run)
+    results_file = run.path_to('results')
+    best_ckpt_file = run.ckpt('best')
+
+    all_results = pd.DataFrame()
+    # check if results exists and are updated, then load them (and probably skip the computation them later)
+    if os.path.exists(results_file) and os.path.getctime(results_file) >= os.path.getctime(
+            best_ckpt_file) and not args.force:
+        all_results = pd.read_csv(results_file)
+
+    params = next(run.params.itertuples())
+
+    test_data = load_test_data(run)
+    test_loader = DataLoader(test_data, batch_size=params.batch_size, shuffle=False)
+
+    model = load_model(run)
+    model = model.to(args.device)
+    model.eval()
+
+    t1 = torch.arange(0, 1.05, .05)  # from 0 to 1 w/ .05 step
+    T = len(t1)
+    model.odeblock.t1 = t1[1:]  # 0 is implicit
+    model.odeblock.return_last_only = False
+
+    def _evaluate(loader, model, tol, args):
+        model.odeblock.tol = tol
+
+        n_batches = 0
+        n_processed = 0
+        nfe_forward = 0
+
+        n_correct = torch.zeros(T)
+        tot_losses = torch.zeros(T)
+
+        progress = tqdm(loader)
+        for x, y in progress:
+            x, y = x.to(args.device), y.to(args.device)
+            p = model(x)  # timestamps (T) x batch (N) x classes (C)
+            nfe_forward += model.nfe(reset=True)
+            pp = p.permute(1, 2, 0)  # N x C x T
+            yy = y.unsqueeze(1).expand(-1, T)  # N x T
+            losses = F.cross_entropy(pp, yy, reduction='none')  # N x T
+
+            tot_losses += losses.sum(0).cpu()
+
+            yy = y.unsqueeze(0).expand(T, -1)
+            n_correct += (yy == p.argmax(dim=-1)).sum(-1).float().cpu()
+            n_processed += y.shape[0]
+            n_batches += 1
+
+            # logloss = losses.item() / n_processed
+            # accuracy = n_correct / n_processed
+            nfe = nfe_forward / n_batches
+            metrics = {
+                # 'loss': f'{logloss:4.3f}',
+                # 'acc': f'{n_correct:4d}/{n_processed:4d} ({accuracy:.2%})',
+                'nfe': f'{nfe:3.1f}'
+            }
+            progress.set_postfix(metrics)
+
+        loglosses = tot_losses / n_processed
+        accuracies = n_correct / n_processed
+
+        metrics = {'t1': t1.numpy(),
+                   'test_loss': loglosses.numpy(),
+                   'test_acc': accuracies.numpy(),
+                   'test_nfe': [nfe, ] * T,
+                   'test_tol': [tol, ] * T}
+
+        return metrics
+
+    progress = tqdm(args.tol)
+    with torch.no_grad():
+        for tol in progress:
+            progress.set_postfix({'tol': tol})
+
+            if 'test_tol' in all_results.columns and (all_results.test_tol == tol).any():
+                progress.write(f'Skipping: tol={tol:g}')
+                continue
+
+            results = _evaluate(test_loader, model, tol, args)
+            results = pd.DataFrame(results)
+            all_results = all_results.append(results, ignore_index=True)
+            all_results.to_csv(results_file, index=False)
+
+
+def retrieval(args):
+    exp = Experiment.from_dir(args.run, main='model')
+    features_file = exp.path_to('features.h5')
+    results_file = exp.path_to('retrieval.csv')
+
+    assert os.path.exists(features_file), f"No pre-extracted features found: {features_file}"
+
+    all_results = pd.DataFrame()
+    # check if results exists and are updated, then load them (and probably skip the computation them later)
+    if os.path.exists(results_file) and os.path.getctime(results_file) >= os.path.getctime(
+            features_file) and not args.force:
+        all_results = pd.read_csv(results_file)
+
+    params = next(exp.params.itertuples())
+
+    with h5py.File(features_file, 'r') as f:
+        features = f['features'][...]
+        y_true = f['y_true'][...]
+        if params.model == 'odenet':
+            t1s = f['t1s'][...]
+
+    features /= np.linalg.norm(features, axis=-2, keepdims=True)
+
+    queries = features  # all queries
+
+    n_samples = features.shape[-2]  # number of samples, for both models (first dimension might be t1)
+    n_queries = queries.shape[-2]  # number of queries, for both models (first dimension might be t1)
+
+    gt = np.broadcast_to(y_true, (n_queries, n_samples)) == y_true[:n_queries].reshape(n_samples,
+                                                                                       -1)  # gt per query in each row
+
+    def score(queries, db, gt):
+        scores = queries.dot(db.T)
+        aps = [average_precision_score(gt[i], scores[i]) for i in trange(n_queries)]
+        return np.mean(aps)
+
+    if params.model == 'odenet':
+        for i, t1 in enumerate(tqdm(t1s)):
+            # TODO check and skip
+            mean_ap_asym = score(queries[i], features[-1], gt)  # t1 = 1 for db
+            mean_ap_sym = score(queries[i], features[i], gt)  # t1 same for queries and db
+            results = {'t1': t1, 'meap_ap_asym': mean_ap_asym, 'mean_ap_sym': mean_ap_sym}
+            all_results = all_results.append(results, ignore_index=True)
+            all_results.to_csv(results_file, index=False)
+    else:  # resnet
+        mean_ap = score(features, features, gt)
+        all_results = all_results.append({'mean_ap': mean_ap}, ignore_index=True)
+        all_results.to_csv(results_file, index=False)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ODENet/ResNet evaluations')
     parser.add_argument('--no-cuda', dest='cuda', action='store_false')
@@ -217,6 +356,11 @@ if __name__ == '__main__':
     parser_test.add_argument('-n', '--num-evals', type=int, default=15)
     parser_test.set_defaults(func=test)
 
+    parser_accuracy = subparsers.add_parser('accuracy')
+    parser_accuracy.add_argument('run')
+    parser_accuracy.add_argument('-t', '--tol', type=float, nargs='+', default=[0.001, 0.01, 0.1, 1, 10, 100])
+    parser_accuracy.set_defaults(func=accuracy)
+
     parser_nfe = subparsers.add_parser('nfe')
     parser_nfe.add_argument('run')
     parser_nfe.add_argument('-t', '--tol', type=float, default=1e-3)
@@ -226,6 +370,10 @@ if __name__ == '__main__':
     parser_features.add_argument('run')
     parser_features.add_argument('-d', '--data', default=None, choices=('tiny-imagenet-200',))
     parser_features.set_defaults(func=features)
+
+    parser_retrieval = subparsers.add_parser('retrieval')
+    parser_retrieval.add_argument('run')
+    parser_retrieval.set_defaults(func=retrieval)
     args = parser.parse_args()
 
     args.device = torch.device('cuda' if args.cuda and torch.cuda.is_available() else 'cpu')
