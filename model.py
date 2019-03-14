@@ -14,21 +14,32 @@ class ODENet(nn.Module):
         elif downsample == 'minimal':
             self.downsample = MinimalConvDownsample(in_ch, out_ch=n_filters)
         elif downsample == 'ode':
-            self.downsample = ODEDownsample(in_ch, out_ch=n_filters, adjoint=adjoint)
+            self.downsample = ODEDownsample(in_ch, out_ch=n_filters, adjoint=adjoint, t1=t1, tol=tol)
 
         self.odeblock = ODEBlock(n_filters=n_filters, tol=tol, adjoint=adjoint, t1=t1)
         self.classifier = FCClassifier(in_ch=n_filters, dropout=dropout)
 
     def forward(self, x):
+        out = []
         x = self.downsample(x)
+        if isinstance(x, (tuple, list)):
+            f, x = x  # first elements are features, second is output to continue the forward
+            f = torch.stack([fi.mean(-1).mean(-1) for fi in f])  # global avg pooling
+            out.append(f)
+
         x = self.odeblock(x)
         if x.dim() > 4:
             x = torch.stack([self.classifier(xi) for xi in x])
         else:
             x = self.classifier(x)
-        return x
+
+        out.append(x)
+        out = torch.cat(out)
+        return out
 
     def to_features_extractor(self):  # ugly hack
+        if isinstance(self.downsample, ODEDownsample):
+            self.downsample.odeblock.return_last_only = False
         self.odeblock.return_last_only = False  # returns dynamic @ multiple timestamps
         # remove last classification layer but maintain norm, relu and global avg pooling
         self.classifier.module[-1] = nn.Sequential()
@@ -125,15 +136,18 @@ class ResDownsample(nn.Module):
 
 class ODEDownsample(nn.Module):
 
-    def __init__(self, in_ch, out_ch=64, adjoint=False):
+    def __init__(self, in_ch, out_ch=64, adjoint=False, t1=1, tol=1e-3):
         super(ODEDownsample, self).__init__()
         self.conv1 = nn.Conv2d(in_ch, out_ch, 4, 2, 1)  # first downsample
-        self.odeblock = ODEBlock(n_filters=out_ch, adjoint=adjoint)
+        self.odeblock = ODEBlock(n_filters=out_ch, adjoint=adjoint, t1=t1, tol=tol)
         self.maxpool = nn.MaxPool2d(4, 2, 1)
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.odeblock(x)
+        if x.dim() > 4:
+            return x, self.maxpool(x[-1])
+
         x = self.maxpool(x)
         return x
 
@@ -263,7 +277,7 @@ class ODEBlock(nn.Module):
         self.integration_time = self.integration_time.type_as(x)
         out = self.odeint(self.odefunc, x, self.integration_time, rtol=self.tol, atol=self.tol)
         if self.return_last_only:
-            out = out[1]  # dynamics @ t=t1
+            out = out[-1]  # dynamics @ t=t1
         return out
 
     @property
@@ -280,8 +294,14 @@ class ODEBlock(nn.Module):
 
     @t1.setter
     def t1(self, value):
-        value = [value, ] if not isinstance(value, (list, tuple)) else list(value)
-        self.integration_time = torch.tensor([0, ] + value).float()
+        if isinstance(value, (int, float)):
+            self.integration_time = torch.tensor([0, value], dtype=torch.float32)
+        elif isinstance(value, (list, tuple)):
+            self.integration_time = torch.tensor([0, ] + list(value), dtype=torch.float32)
+        elif isinstance(value, torch.Tensor):
+            self.integration_time = torch.tensor([0, ] + value.tolist(), dtype=torch.float32)
+        else:
+            raise ValueError('Argument must be a scalar, a list, or a tensor')
 
 
 class Flatten(nn.Module):

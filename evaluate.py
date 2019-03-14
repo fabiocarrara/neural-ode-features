@@ -57,6 +57,8 @@ def features(args):
         results = results[results.t1 <= 1]
         t1s = results.t1.sort_values().unique()
         model.odeblock.t1 = t1s.tolist()
+        if params.downsample == 'ode':
+            model.downsample.odeblock.t1 = t1s.tolist()
         t1s = np.insert(t1s, 0, 0)  # add 0 at the beginning
 
     features = []
