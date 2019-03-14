@@ -8,6 +8,8 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from sklearn.metrics import average_precision_score
+from sklearn.model_selection import GridSearchCV
+from sklearn.svm import LinearSVC
 from torch.utils.data import DataLoader
 from torchvision.transforms import transforms
 from tqdm import tqdm, trange
@@ -348,6 +350,42 @@ def retrieval(args):
         all_results.to_csv(results_file, index=False)
 
 
+def finetune(args):
+    run = Experiment.from_dir(args.run, main='model')
+    print(run)
+
+    features_file = 'features.h5' if args.data is None else 'features-{}.h5'.format(args.data)
+    features_file = run.path_to(features_file)
+
+    assert os.path.exists(features_file), f"Features file not found: {features_file}"
+
+    results_file = run.path_to('finetune.csv')
+    if os.path.exists(results_file) and os.path.getctime(results_file) >= os.path.getctime(features_file) and not args.force:
+        print('Skipping...')
+        sys.exit(0)
+
+    params = next(run.params.itertuples())
+
+    with h5py.File(features_file, 'r') as f:
+        features = f['features'][...]
+        y_true = f['y_true'][...]
+        t1s = f['t1s'][...]
+
+    svm = LinearSVC()
+    svm = GridSearchCV(svm, {'C': np.logspace(-5, 5, 11)}, scoring='accuracy', n_jobs=-1, verbose=1, cv=10)
+    scores = []
+    for fi in tqdm(features):
+        score = svm.fit(fi, y_true).best_score_
+        print(f'Accuracy: {score:.2%}')
+        scores.append(score)
+
+    if params.downsample == "ode":
+        t1s = np.concatenate(t1s, t1s + 1)
+
+    results = pd.DataFrame({'t1': t1s, 'cv_accuracy': scores})
+    results.to_csv(results_file, index=False)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ODENet/ResNet evaluations')
     parser.add_argument('--no-cuda', dest='cuda', action='store_false')
@@ -379,6 +417,11 @@ if __name__ == '__main__':
     parser_retrieval = subparsers.add_parser('retrieval')
     parser_retrieval.add_argument('run')
     parser_retrieval.set_defaults(func=retrieval)
+
+    parser_finetune = subparsers.add_parser('finetune')
+    parser_finetune.add_argument('run')
+    parser_finetune.add_argument('-d', '--data', default=None, choices=('tiny-imagenet-200',))
+    parser_finetune.set_defaults(func=finetune)
     args = parser.parse_args()
 
     args.device = torch.device('cuda' if args.cuda and torch.cuda.is_available() else 'cpu')
