@@ -27,12 +27,9 @@ def features(args):
     features_file = 'features.h5' if args.data is None else 'features-{}.h5'.format(args.data)
     features_file = run.path_to(features_file)
     results_file = run.path_to('results')
-    best_ckpt = run.ckpt('best')
+    dependecy_file = run.ckpt('best')
 
-    dependecy_file = best_ckpt if params.model == 'resnet' else results_file
-
-    if os.path.exists(features_file) and os.path.getctime(features_file) >= os.path.getctime(
-            dependecy_file) and not args.force:
+    if os.path.exists(features_file) and os.path.getctime(features_file) >= os.path.getctime(dependecy_file) and not args.force:
         print('Skipping...')
         sys.exit(0)
 
