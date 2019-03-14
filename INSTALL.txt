@@ -1,2 +1,2 @@
 pip install -e torchdiffeq
-pip install torchvision h5py
+pip install torchvision h5py tqdm seaborn
