@@ -45,16 +45,6 @@ def t1(args):
 
     results = Experiment.collect_all(exps, 'results')
 
-    conditions = (
-            (results.augmentation != 'none')
-            # & (results.downsample == 'minimal')
-            & (results.lrschedule == 'plateau')
-        # & (~results.adjoint)
-        # & (results.tol == 0.01)
-    )
-
-    results = results[conditions]
-
     unique_cols = results.apply(pd.Series.nunique) == 1
     common_params = results.loc[:, unique_cols].iloc[0]
 
@@ -157,10 +147,52 @@ def clean(args):
                 print(command)
                 os.system(command)
 
+def retrieval(args):
+    assert Experiment.is_exp_dir(args.run), "Not a run dir: args.run"
+    run = Experiment.from_dir(args.run, main='model')
+    results_file = run.path_to('retrieval.csv')
+
+    assert os.path.exists(results_file), f"Results file not found: {results_file}"
+
+    results = pd.read_csv(results_file)
+    # t1s, mean_aps_sym, mean_aps_asym = results.loc[:, ['t1', 'mean_ap_sym', 'mean_ap_asym']]
+
+    plt.figure(figsize=(15,5))
+    ax = plt.gca()
+    results.plot('t1', 'mean_ap_sym', marker='.', label='sym', ax=ax)
+    results.plot('t1', 'mean_ap_asym', marker='.', label='asym', ax=ax)
+    # plt.axhline(mean_ap_res, c='k', label='resnet')
+    max_diff = (results.mean_ap_asym - results.mean_ap_sym).max()
+    print(f'Asym-sym max difference: {max_diff:%}')
+    # plt.plot(t1s, mean_aps_asym - mean_aps_sym, marker='.', label='diff')
+
+    plt.title('mAP vs Feature Depth (t) - CIFAR-10')
+    plt.xlabel('Integration time')
+    plt.ylabel('mAP')
+    # plt.ylim([0, 1])
+    plt.legend(loc='best')
+
+    ''' NFE sectioning
+    ns = np.diff(nfe)
+    xv = np.diff(t1s)/2
+    xv[1:] += t1s[1:-1]
+    xv = xv[ns != 0]
+
+    for x in xv:
+        plt.axvline(x, c='k', ls='--')
+
+    xv = np.array([0, ] + xv.tolist() + [1,])
+    xl = np.diff(xv) / 2
+    xl[1:] += xv[1:-1]
+
+    for x, n in zip(xl, np.unique(nfe)):
+        plt.annotate('NFE = {:.1f}'.format(n), (x, .2), rotation=90, ha='center', va='center')
+    '''
+
+    plt.savefig(args.output, bbox_inches="tight")
+
 
 if __name__ == '__main__':
-    # options = [name for name, obj in inspect.getmembers(sys.modules[__name__]) if
-    #           (inspect.isfunction(obj) and not name.startswith('_'))]
 
     def run_filter(string):
         if '=' not in string:
@@ -202,9 +234,14 @@ if __name__ == '__main__':
     parser_nfe.add_argument('run', default='runs/')
     parser_nfe.set_defaults(func=nparams)
 
-    parser_nfe = subparsers.add_parser('clean')
-    parser_nfe.add_argument('run', default='runs/')
-    parser_nfe.set_defaults(func=clean)
+    parser_clean = subparsers.add_parser('clean')
+    parser_clean.add_argument('run', default='runs/')
+    parser_clean.set_defaults(func=clean)
+
+    parser_retrieval = subparsers.add_parser('retrieval')
+    parser_retrieval.add_argument('run', default='runs/')
+    parser_retrieval.add_argument('-o', '--output', default='retrieval.pdf')
+    parser_retrieval.set_defaults(func=retrieval)
 
     args = parser.parse_args()
     args.func(args)
