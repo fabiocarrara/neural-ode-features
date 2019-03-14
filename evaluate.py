@@ -51,14 +51,17 @@ def features(args):
     model.to_features_extractor()
 
     if params.model == 'odenet':
-        assert os.path.exists(results_file), 'Results file for this run not found: {}'.format(results_file)
+        if os.path.exists(results_file):  # reuse t1s if already tested
+            results = pd.read_csv(results_file)
+            results = results[results.t1 <= 1]
+            t1s = results.t1.sort_values().unique()
+        else:
+            t1s = np.arange(.05, 1.05, .05)  # from 0 to 1 w/ .05 step
 
-        results = pd.read_csv(results_file)
-        results = results[results.t1 <= 1]
-        t1s = results.t1.sort_values().unique()
         model.odeblock.t1 = t1s.tolist()
         if params.downsample == 'ode':
             model.downsample.odeblock.t1 = t1s.tolist()
+
         t1s = np.insert(t1s, 0, 0)  # add 0 at the beginning
 
     features = []
