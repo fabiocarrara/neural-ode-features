@@ -356,10 +356,12 @@ def finetune(args):
 
     assert os.path.exists(features_file), f"Features file not found: {features_file}"
 
+    results = pd.DataFrame()
+
     results_file = run.path_to('finetune.csv')
-    if os.path.exists(results_file) and os.path.getctime(results_file) >= os.path.getctime(features_file) and not args.force:
-        print('Skipping...')
-        sys.exit(0)
+    if os.path.exists(results_file):
+        if os.path.getctime(results_file) >= os.path.getctime(features_file) and not args.force:
+            results = pd.read_csv(results_file)
 
     params = next(run.params.itertuples())
 
@@ -368,19 +370,24 @@ def finetune(args):
         y_true = f['y_true'][...]
         t1s = f['t1s'][...]
 
+    block = np.zeros_like(t1s, dtype=int)
+    if params.downsample == "ode":
+        block = np.concatenate((block, block + 1))
+        t1s = np.concatenate((t1s, t1s))
+
     svm = LinearSVC()
-    svm = GridSearchCV(svm, {'C': np.logspace(-5, 5, 11)}, scoring='accuracy', n_jobs=-1, verbose=1, cv=10)
-    scores = []
-    for fi in tqdm(features):
+    Cs = np.logspace(-2, 2, 5)
+    svm = GridSearchCV(svm, {'C': Cs}, scoring='accuracy', n_jobs=-1, verbose=10, cv=5)
+
+    for t1, b, fi in tqdm(zip(t1s, block, features)):
+        if 't1' in results.columns and 'block' in results.columns and ((results.t1 == t1) & (results.block == b)).any():
+            print(f'Skipping b={b} t1={t1} ...')
+            continue
+
         score = svm.fit(fi, y_true).best_score_
         print(f'Accuracy: {score:.2%}')
-        scores.append(score)
-
-    if params.downsample == "ode":
-        t1s = np.concatenate(t1s, t1s + 1)
-
-    results = pd.DataFrame({'t1': t1s, 'cv_accuracy': scores})
-    results.to_csv(results_file, index=False)
+        results = results.append({'block': b, 't1': t1, 'cv_accuracy': score}, ignore_index=True)
+        results.to_csv(results_file, index=False)
 
 
 if __name__ == '__main__':

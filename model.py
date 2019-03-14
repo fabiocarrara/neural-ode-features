@@ -315,5 +315,8 @@ class Flatten(nn.Module):
 
 
 if __name__ == '__main__':
-    net = ODENet()
-    print(net)
+    net = ODENet(3, downsample='ode', t1=[.1, .2, .3, 1]).to('cuda')
+    net.to_features_extractor()
+    # print(net)
+    a = torch.rand(7, 3, 32, 32).to('cuda')
+    print(net(a).shape)
