@@ -14,6 +14,8 @@ from model import ODENet, ResNet
 class TinyImageNet200(Dataset):
     def __init__(self, root, download=True, transform=None, target_transform=None, split='train'):
         self.root = root
+        self.transform = transform
+        self.target_transform = target_transform
 
         if not self._check_data():
             assert download, "Data is missing or corrupted. Please provide download=True to download."
@@ -54,6 +56,12 @@ class TinyImageNet200(Dataset):
             filename, target = self.annot.loc[index, ['url', 'target']]
             path = os.path.join(self.image_root, filename)
             image = default_loader(path)
+
+            if self.transform:
+                image = self.transform(image)
+            if self.target_transform:
+                target = self.target_transform(target)
+
             return image, target
 
     def __len__(self):
