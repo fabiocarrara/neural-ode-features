@@ -1,14 +1,17 @@
 import os
 
+import pandas as pd
 import torch
-import torchvision
+from torch.utils.data import Dataset
 from torchvision import datasets
+from torchvision.datasets import ImageFolder
+from torchvision.datasets.folder import default_loader
 from torchvision.transforms import transforms
 
 from model import ODENet, ResNet
 
 
-class TinyImageNet200(torchvision.datasets.ImageFolder):
+class TinyImageNet200(Dataset):
     def __init__(self, root, download=True, transform=None, target_transform=None, split='train'):
         self.root = root
 
@@ -21,7 +24,17 @@ class TinyImageNet200(torchvision.datasets.ImageFolder):
         assert split in ('train', 'val', 'test'), "Parameter 'split' must be one of: train, val, test"
         self.split = split
         root = os.path.join(root, self.split)
-        super(TinyImageNet200, self).__init__(root, transform=transform, target_transform=target_transform)
+
+        if self.split == 'train':
+            self.dataset = ImageFolder(root, transform=transform, target_transform=target_transform)
+        elif self.split == 'val':
+            self.image_root = os.path.join(root, 'images')
+            annot_file = os.path.join(root, 'val_annotations.txt')
+            self.annot = pd.read_csv(annot_file, sep='\t', header=None, usecols=(0, 1), names=('url', 'label'))
+            label2idx = {label: i for i, label in enumerate(sorted(self.annot.label.unique().tolist()))}
+            self.annot['target'] = self.annot.label.apply(lambda x: label2idx[x])
+        else:
+            raise NotImplementedError("Loader for the 'test' split has not been implemented yet.")
 
     def _check_data(self):
         if not os.path.exists(self.root):
@@ -33,6 +46,21 @@ class TinyImageNet200(torchvision.datasets.ImageFolder):
                 return False
 
         return True
+
+    def __getitem__(self, index):
+        if self.split == 'train':
+            return self.dataset[index]
+        elif self.split == 'val':
+            filename, target = self.annot.loc[index, ['url', 'target']]
+            path = os.path.join(self.image_root, filename)
+            image = default_loader(path)
+            return image, target
+
+    def __len__(self):
+        if self.split == 'train':
+            return len(self.dataset)
+        elif self.split == 'val':
+            return len(self.annot)
 
 
 def load_dataset(args):
