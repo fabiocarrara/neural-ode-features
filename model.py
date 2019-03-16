@@ -15,6 +15,8 @@ class ODENet(nn.Module):
             self.downsample = MinimalConvDownsample(in_ch, out_ch=n_filters)
         elif downsample == 'ode':
             self.downsample = ODEDownsample(in_ch, out_ch=n_filters, adjoint=adjoint, t1=t1, tol=tol)
+        elif downsample == 'ode2':
+            self.downsample = ODEDownsample2(in_ch, out_ch=n_filters, adjoint=adjoint, t1=t1, tol=tol)
 
         self.odeblock = ODEBlock(n_filters=n_filters, tol=tol, adjoint=adjoint, t1=t1)
         self.classifier = FCClassifier(in_ch=n_filters, dropout=dropout)
@@ -149,6 +151,26 @@ class ODEDownsample(nn.Module):
             return x, self.maxpool(x[-1])
 
         x = self.maxpool(x)
+        return x
+        
+        
+class ODEDownsample2(nn.Module):
+
+    def __init__(self, in_ch, out_ch=64, adjoint=False, t1=1, tol=1e-3):
+        super(ODEDownsample2, self).__init__()
+        self.conv1 = nn.Conv2d(in_ch, out_ch, 4, 2, 1)  # first downsample
+        self.odeblock = ODEBlock(n_filters=out_ch, adjoint=adjoint, t1=t1, tol=tol)
+        self.norm = nn.Sequential(norm(out_ch), nn.ReLU(inplace=True))
+        self.conv2 = nn.Conv2d(out_ch, out_ch, 4, 2, 1)  # downsample for successive ode
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.odeblock(x)
+        if x.dim() > 4:
+            x = torch.stack([self.norm(xi) for xi in x])
+            return x, self.conv2(x[-1])
+
+        x = self.conv2(x)
         return x
 
 
