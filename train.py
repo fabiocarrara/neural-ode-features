@@ -117,15 +117,15 @@ def main(args):
         print('Skipping ...')
         sys.exit(0)
 
-    train_data, test_data, in_ch = load_dataset(args)
+    train_data, test_data, in_ch, out = load_dataset(args)
     train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
     test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=False)
 
     if args.model == 'odenet':
-        model = ODENet(in_ch, n_filters=args.filters, downsample=args.downsample, tol=args.tol, adjoint=args.adjoint,
+        model = ODENet(in_ch, out=out, n_filters=args.filters, downsample=args.downsample, tol=args.tol, adjoint=args.adjoint,
                        dropout=args.dropout)
     else:
-        model = ResNet(in_ch, n_filters=args.filters, downsample=args.downsample, dropout=args.dropout)
+        model = ResNet(in_ch, out=out, n_filters=args.filters, downsample=args.downsample, dropout=args.dropout)
 
     model = model.to(args.device)
     if args.optim == 'sgd':

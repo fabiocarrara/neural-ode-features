@@ -4,7 +4,7 @@ from torchdiffeq import odeint_adjoint, odeint
 
 
 class ODENet(nn.Module):
-    def __init__(self, in_ch, n_filters=64, downsample='residual', tol=1e-3, adjoint=False, t1=1, dropout=0):
+    def __init__(self, in_ch, out=10, n_filters=64, downsample='residual', tol=1e-3, adjoint=False, t1=1, dropout=0):
         super(ODENet, self).__init__()
 
         if downsample == 'residual':
@@ -19,7 +19,7 @@ class ODENet(nn.Module):
             self.downsample = ODEDownsample2(in_ch, out_ch=n_filters, adjoint=adjoint, t1=t1, tol=tol)
 
         self.odeblock = ODEBlock(n_filters=n_filters, tol=tol, adjoint=adjoint, t1=t1)
-        self.classifier = FCClassifier(in_ch=n_filters, dropout=dropout)
+        self.classifier = FCClassifier(in_ch=n_filters, out=out, dropout=dropout)
 
     def forward(self, x):
         out = []
@@ -54,7 +54,7 @@ class ODENet(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, in_ch, n_filters=64, downsample='residual', dropout=0):
+    def __init__(self, in_ch, out=10, n_filters=64, downsample='residual', dropout=0):
         super(ResNet, self).__init__()
 
         if downsample == 'residual':
@@ -65,7 +65,7 @@ class ResNet(nn.Module):
             self.downsample = MinimalConvDownsample(in_ch, out_ch=n_filters)
 
         self.features = nn.Sequential(*[ResBlock(n_filters, n_filters) for _ in range(6)])
-        self.classifier = FCClassifier(n_filters, dropout=dropout)
+        self.classifier = FCClassifier(n_filters, out=out, dropout=dropout)
 
     def to_features_extractor(self):  # ugly hack
         # remove last classification layer but maintain norm, relu and global avg pooling
@@ -181,7 +181,7 @@ class ODEDownsample2(nn.Module):
 
 class FCClassifier(nn.Module):
 
-    def __init__(self, in_ch=64, dropout=0):
+    def __init__(self, in_ch=64, out=10, dropout=0):
         super(FCClassifier, self).__init__()
 
         layers = [
@@ -192,7 +192,7 @@ class FCClassifier(nn.Module):
                      [nn.Dropout(dropout), ] if dropout else []
                  ) + [
                      Flatten(),
-                     nn.Linear(in_ch, 10)
+                     nn.Linear(in_ch, out)
                  ]
 
         self.module = nn.Sequential(*layers)

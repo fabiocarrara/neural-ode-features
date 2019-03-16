@@ -86,6 +86,7 @@ def load_dataset(args):
         train_data = datasets.MNIST('data/mnist', download=True, train=True, transform=train_transform)
         test_data = datasets.MNIST('data/mnist', download=True, train=False, transform=test_transform)
         in_ch = 1
+        out = 10
 
     elif args.dataset == 'cifar10':
         if args.augmentation == 'none':
@@ -120,6 +121,7 @@ def load_dataset(args):
         train_data = datasets.CIFAR10('data/cifar10', download=True, train=True, transform=train_transform)
         test_data = datasets.CIFAR10('data/cifar10', download=True, train=False, transform=test_transform)
         in_ch = 3
+        out = 10
     
     elif args.dataset == 'tiny-imagenet-200':
         if args.augmentation == 'none':
@@ -154,8 +156,9 @@ def load_dataset(args):
         train_data = TinyImageNet200('data/tiny-imagenet-200', download=True, split='train', transform=train_transform)
         test_data = TinyImageNet200('data/tiny-imagenet-200', download=True, split='val', transform=test_transform)
         in_ch = 3
+        out = 200
 
-    return train_data, test_data, in_ch
+    return train_data, test_data, in_ch, out
 
 
 def load_test_data(exp):
