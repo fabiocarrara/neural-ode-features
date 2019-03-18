@@ -1,3 +1,7 @@
 [submodule "torchdiffeq"]
 	path = torchdiffeq
 	url = https://github.com/rtqichen/torchdiffeq.git
+[submodule "expman"]
+	path = expman
+	url = git@github.com:fabiocarrara/expman.git
+	branch = master
