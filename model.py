@@ -170,6 +170,7 @@ class ODEDownsample2(nn.Module):
             x = torch.stack([self.norm(xi) for xi in x])
             return x, self.conv2(x[-1])
 
+        x = self.norm(x)
         x = self.conv2(x)
         return x
 
