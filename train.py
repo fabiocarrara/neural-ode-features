@@ -194,7 +194,7 @@ if __name__ == '__main__':
     parser.add_argument('--augmentation', type=str, choices=('none', 'crop+flip+norm', 'crop+jitter+flip+norm'),
                         default='none')
     parser.add_argument('-m', '--model', type=str, choices=('resnet', 'odenet'), default='odenet')
-    parser.add_argument('-d', '--downsample', type=str, choices=('ode2', 'ode', 'residual', 'convolution', 'minimal'),
+    parser.add_argument('-d', '--downsample', type=str, choices=('ode2', 'ode', 'residual', 'convolution', 'minimal', 'one-shot'),
                         default='residual')
     parser.add_argument('-f', '--filters', type=int, default=64)
     parser.add_argument('--dropout', type=float, default=0)

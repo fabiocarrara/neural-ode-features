@@ -13,6 +13,8 @@ class ODENet(nn.Module):
             self.downsample = ConvDownsample(in_ch, out_ch=n_filters)
         elif downsample == 'minimal':
             self.downsample = MinimalConvDownsample(in_ch, out_ch=n_filters)
+        elif downsample == 'one-shot':
+            self.downsample = OneShotDownsample(in_ch, out_ch=n_filters)
         elif downsample == 'ode':
             self.downsample = ODEDownsample(in_ch, out_ch=n_filters, adjoint=adjoint, t1=t1, tol=tol)
         elif downsample == 'ode2':
@@ -63,6 +65,8 @@ class ResNet(nn.Module):
             self.downsample = ConvDownsample(in_ch, out_ch=n_filters)
         elif downsample == 'minimal':
             self.downsample = MinimalConvDownsample(in_ch, out_ch=n_filters)
+        elif downsample == 'one-shot':
+            self.downsample = OneShotDownsample(in_ch, out_ch=n_filters)
 
         self.features = nn.Sequential(*[ResBlock(n_filters, n_filters) for _ in range(6)])
         self.classifier = FCClassifier(n_filters, out=out, dropout=dropout)
@@ -84,6 +88,16 @@ class ResNet(nn.Module):
 """
    Initial Downsample Blocks
 """
+
+
+class OneShotDownsample(nn.Module):
+
+    def __init__(self, in_ch, out_ch=64):
+        super(OneShotDownsample, self).__init__()
+        self.module = nn.Conv2d(in_ch, out_ch, 4, 2, 1)
+
+    def forward(self, *input):
+        return self.module(*input)
 
 
 class MinimalConvDownsample(nn.Module):
@@ -152,8 +166,8 @@ class ODEDownsample(nn.Module):
 
         x = self.maxpool(x)
         return x
-        
-        
+
+
 class ODEDownsample2(nn.Module):
 
     def __init__(self, in_ch, out_ch=64, adjoint=False, t1=1, tol=1e-3):
