@@ -122,7 +122,7 @@ def main(args):
     test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=False)
 
     if args.model == 'odenet':
-        model = ODENet(in_ch, out=out, n_filters=args.filters, downsample=args.downsample, tol=args.tol, adjoint=args.adjoint,
+        model = ODENet(in_ch, out=out, n_filters=args.filters, downsample=args.downsample, method=args.method, tol=args.tol, adjoint=args.adjoint,
                        dropout=args.dropout)
     else:
         model = ResNet(in_ch, out=out, n_filters=args.filters, downsample=args.downsample, dropout=args.dropout)
@@ -212,6 +212,7 @@ if __name__ == '__main__':
     parser.add_argument('--no-cuda', dest='cuda', action='store_false')
     parser.set_defaults(cuda=True)
 
+    parser.add_argument('--method', default='dopri5', choices=('dopri5', 'adams'))
     parser.add_argument('-t', '--tol', type=float, default=1e-3)
     parser.add_argument('-a', '--adjoint', default=False, action='store_true')
 

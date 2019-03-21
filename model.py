@@ -4,7 +4,7 @@ from torchdiffeq import odeint_adjoint, odeint
 
 
 class ODENet(nn.Module):
-    def __init__(self, in_ch, out=10, n_filters=64, downsample='residual', tol=1e-3, adjoint=False, t1=1, dropout=0):
+    def __init__(self, in_ch, out=10, n_filters=64, downsample='residual', method='dopri5', tol=1e-3, adjoint=False, t1=1, dropout=0):
         super(ODENet, self).__init__()
 
         if downsample == 'residual':
@@ -16,11 +16,11 @@ class ODENet(nn.Module):
         elif downsample == 'one-shot':
             self.downsample = OneShotDownsample(in_ch, out_ch=n_filters)
         elif downsample == 'ode':
-            self.downsample = ODEDownsample(in_ch, out_ch=n_filters, adjoint=adjoint, t1=t1, tol=tol)
+            self.downsample = ODEDownsample(in_ch, out_ch=n_filters, adjoint=adjoint, t1=t1, tol=tol, method=method)
         elif downsample == 'ode2':
-            self.downsample = ODEDownsample2(in_ch, out_ch=n_filters, adjoint=adjoint, t1=t1, tol=tol)
+            self.downsample = ODEDownsample2(in_ch, out_ch=n_filters, adjoint=adjoint, t1=t1, tol=tol, method=method)
 
-        self.odeblock = ODEBlock(n_filters=n_filters, tol=tol, adjoint=adjoint, t1=t1)
+        self.odeblock = ODEBlock(n_filters=n_filters, tol=tol, adjoint=adjoint, t1=t1, method=method)
         self.classifier = FCClassifier(in_ch=n_filters, out=out, dropout=dropout)
 
     def forward(self, x):
@@ -152,10 +152,10 @@ class ResDownsample(nn.Module):
 
 class ODEDownsample(nn.Module):
 
-    def __init__(self, in_ch, out_ch=64, adjoint=False, t1=1, tol=1e-3):
+    def __init__(self, in_ch, out_ch=64, method='dopri5', adjoint=False, t1=1, tol=1e-3):
         super(ODEDownsample, self).__init__()
         self.conv1 = nn.Conv2d(in_ch, out_ch, 4, 2, 1)  # first downsample
-        self.odeblock = ODEBlock(n_filters=out_ch, adjoint=adjoint, t1=t1, tol=tol)
+        self.odeblock = ODEBlock(n_filters=out_ch, adjoint=adjoint, t1=t1, tol=tol, method=method)
         self.maxpool = nn.MaxPool2d(4, 2, 1)
 
     def forward(self, x):
@@ -170,10 +170,10 @@ class ODEDownsample(nn.Module):
 
 class ODEDownsample2(nn.Module):
 
-    def __init__(self, in_ch, out_ch=64, adjoint=False, t1=1, tol=1e-3):
+    def __init__(self, in_ch, out_ch=64, method='dopri5', adjoint=False, t1=1, tol=1e-3):
         super(ODEDownsample2, self).__init__()
         self.conv1 = nn.Conv2d(in_ch, out_ch, 4, 2, 1)  # first downsample
-        self.odeblock = ODEBlock(n_filters=out_ch, adjoint=adjoint, t1=t1, tol=tol)
+        self.odeblock = ODEBlock(n_filters=out_ch, adjoint=adjoint, t1=t1, tol=tol, method=method)
         self.norm = nn.Sequential(norm(out_ch), nn.ReLU(inplace=True))
         self.conv2 = nn.Conv2d(out_ch, out_ch, 4, 2, 1)  # downsample for successive ode
 
@@ -302,17 +302,18 @@ class ODEfunc(nn.Module):
 
 class ODEBlock(nn.Module):
 
-    def __init__(self, n_filters=64, tol=1e-3, adjoint=False, t1=1):
+    def __init__(self, n_filters=64, tol=1e-3, method='dopri5', adjoint=False, t1=1):
         super(ODEBlock, self).__init__()
         self.odefunc = ODEfunc(n_filters)
         self.t1 = t1
         self.tol = tol
+        self.method = method
         self.odeint = odeint_adjoint if adjoint else odeint
         self.return_last_only = True
 
     def forward(self, x):
         self.integration_time = self.integration_time.type_as(x)
-        out = self.odeint(self.odefunc, x, self.integration_time, rtol=self.tol, atol=self.tol)
+        out = self.odeint(self.odefunc, x, self.integration_time, method=self.method, rtol=self.tol, atol=self.tol)
         if self.return_last_only:
             out = out[-1]  # dynamics @ t=t1
         return out

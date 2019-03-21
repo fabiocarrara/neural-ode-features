@@ -122,7 +122,7 @@ def load_dataset(args):
         test_data = datasets.CIFAR10('data/cifar10', download=True, train=False, transform=test_transform)
         in_ch = 3
         out = 10
-    
+
     elif args.dataset == 'tiny-imagenet-200':
         if args.augmentation == 'none':
             train_transform = test_transform = transforms.ToTensor()
@@ -200,7 +200,7 @@ def load_model(exp, in_ch=None):
         in_ch = 1 if params.dataset == 'mnist' else 3
 
     if params.model == 'odenet':
-        model = ODENet(in_ch, n_filters=params.filters, downsample=params.downsample, tol=params.tol,
+        model = ODENet(in_ch, n_filters=params.filters, downsample=params.downsample, method=params.method, tol=params.tol,
                        adjoint=params.adjoint, dropout=params.dropout)
     else:
         model = ResNet(in_ch, n_filters=params.filters, downsample=params.downsample, dropout=params.dropout)
@@ -209,29 +209,29 @@ def load_model(exp, in_ch=None):
     model.load_state_dict(checkpoint)
 
     return model
-    
+
 
 if __name__ == '__main__':
     from torch.utils.data import DataLoader
     from tqdm import tqdm
-    
+
     d = TinyImageNet200('data/tiny-imagenet-200', split='train', transform=transforms.ToTensor())
     d = DataLoader(d, batch_size=100, shuffle=False, num_workers=4)
-  
+
     mu = torch.zeros(3)
     std = torch.zeros(3)
-  
+
     for x, _ in tqdm(d):
         mu += x.sum(0).sum(-1).sum(-1)
-    
+
     mu /= len(d.dataset) * (64 * 64)
     print(mu.tolist())
-    
+
     for x, _ in tqdm(d):
         std += ((x - mu.view(-1,1,1))**2).sum(0).sum(-1).sum(-1)
-    
+
     std = torch.sqrt(std / (len(d.dataset) * (64 * 64)))
     print(std.tolist())
-  
+
 
 
