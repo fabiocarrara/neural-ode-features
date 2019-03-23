@@ -28,7 +28,10 @@ class ODENet(nn.Module):
         x = self.downsample(x)
         if isinstance(x, (tuple, list)):
             f, x = x  # first elements are features, second is output to continue the forward
-            f = torch.stack([fi.mean(-1).mean(-1) for fi in f])  # global avg pooling
+            if isinstance(self.classifier.module[-1], nn.Sequential):  # no classification to be performed, apply GAP and return
+                f = torch.stack([fi.mean(-1).mean(-1) for fi in f])  # global avg pooling
+            else:  # we want to apply the classifier to all features
+                f = torch.stack([self.classifier(fi) for fi in f])
             out.append(f)
 
         x = self.odeblock(x)
@@ -42,7 +45,7 @@ class ODENet(nn.Module):
         return out
 
     def to_features_extractor(self):  # ugly hack
-        if isinstance(self.downsample, ODEDownsample):
+        if isinstance(self.downsample, (ODEDownsample, ODEDownsample2)):
             self.downsample.odeblock.return_last_only = False
         self.odeblock.return_last_only = False  # returns dynamic @ multiple timestamps
         # remove last classification layer but maintain norm, relu and global avg pooling
@@ -176,12 +179,18 @@ class ODEDownsample2(nn.Module):
         self.odeblock = ODEBlock(n_filters=out_ch, adjoint=adjoint, t1=t1, tol=tol, method=method)
         self.norm = nn.Sequential(norm(out_ch), nn.ReLU(inplace=True))
         self.conv2 = nn.Conv2d(out_ch, out_ch, 4, 2, 1)  # downsample for successive ode
+        
+        self.apply_conv = False
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.odeblock(x)
         if x.dim() > 4:
             x = torch.stack([self.norm(xi) for xi in x])
+            if self.apply_conv:
+                x = torch.stack([self.conv2(xi) for xi in x])
+                return x, x[-1]
+            # otherwise apply conv2 only at the last
             return x, self.conv2(x[-1])
 
         x = self.norm(x)
