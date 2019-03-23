@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
+import itertools
+
 from sklearn.metrics import average_precision_score
 from sklearn.model_selection import GridSearchCV
 from sklearn.svm import LinearSVC
@@ -58,7 +60,7 @@ def features(args):
             t1s = np.arange(.05, 1.05, .05)  # from 0 to 1 w/ .05 step
 
         model.odeblock.t1 = t1s.tolist()
-        if params.downsample == 'ode':
+        if 'ode' in params.downsample:
             model.downsample.odeblock.t1 = t1s.tolist()
 
         t1s = np.insert(t1s, 0, 0)  # add 0 at the beginning
@@ -118,52 +120,17 @@ def nfe(args):
     pd.DataFrame(data).to_csv(results_file)
 
 
-def evaluate(loader, model, t1, tol, args):
-    model.eval()
-    model.odeblock.t1 = t1
-    model.odeblock.tol = tol
-
-    n_correct = 0
-    n_batches = 0
-    n_processed = 0
-    nfe_forward = 0
-
-    progress = tqdm(loader)
-    for x, y in progress:
-        x, y = x.to(args.device), y.to(args.device)
-        p = model(x)
-        nfe_forward += model.nfe(reset=True)
-        loss = F.cross_entropy(p, y)
-
-        n_correct += (y == p.argmax(dim=1)).sum().item()
-        n_processed += y.shape[0]
-        n_batches += 1
-
-        logloss = loss.item() / n_processed
-        accuracy = n_correct / n_processed
-        nfe = nfe_forward / n_batches
-        metrics = {
-            'loss': f'{logloss:4.3f}',
-            'acc': f'{n_correct:4d}/{n_processed:4d} ({accuracy:.2%})',
-            'nfe': f'{nfe:3.1f}'
-        }
-        progress.set_postfix(metrics)
-
-    metrics = {'t1': t1, 'test_loss': logloss, 'test_acc': accuracy, 'test_nfe': nfe, 'test_tol': tol}
-    return metrics
-
-
-def test(args):
+def tradeoff(args):
     run = Experiment.from_dir(args.run, main='model')
     print(run)
-    results_file = run.path_to('results')
+    results_file = run.path_to('tradeoff.csv')
     best_ckpt_file = run.ckpt('best')
 
-    all_results = pd.DataFrame()
+    results = pd.DataFrame()
     # check if results exists and are updated, then load them (and probably skip the computation them later)
     if os.path.exists(results_file) and os.path.getctime(results_file) >= os.path.getctime(
             best_ckpt_file) and not args.force:
-        all_results = pd.read_csv(results_file)
+        results = pd.read_csv(results_file)
 
     params = next(run.params.itertuples())
 
@@ -172,41 +139,51 @@ def test(args):
 
     model = load_model(run)
     model = model.to(args.device)
+    model.eval()
+    
+    def _evaluate(loader, model, t1, tol, args):
+        model.odeblock.t1 = t1
+        model.odeblock.tol = tol
 
-    tol_progress = tqdm(args.tol)
-    for tol in tol_progress:
-        tol_progress.set_postfix({'tol': tol})
+        n_correct = 0
+        n_batches = 0
+        n_processed = 0
+        nfe_forward = 0
 
-        if 'test_tol' in all_results.columns:
-            t1_results = all_results[all_results.test_tol == tol].sort_values('t1').reset_index(drop=True)
-        else:
-            t1_results = pd.DataFrame()
+        progress = tqdm(loader)
+        for x, y in progress:
+            x, y = x.to(args.device), y.to(args.device)
+            p = model(x)
+            nfe_forward += model.nfe(reset=True)
+            loss = F.cross_entropy(p, y)
 
-        n_evals = len(t1_results)
-        progress = tqdm(initial=n_evals, total=args.num_evals)
-        while n_evals < args.num_evals:
-            if n_evals == 0:
-                t1 = 1e-6
-            elif n_evals == 1:
-                t1 = 1
-            else:
-                ts = t1_results['t1'].values
-                accs = t1_results['test_acc'].values
-                metric = (np.diff(ts) * np.diff(accs) / accs[:-1])  # search the interval with maximum (Dt * relative accuracy increment)
-                left_t_idx = metric.argmax()
-                t1 = (ts[left_t_idx] + ts[left_t_idx + 1]) / 2
+            n_correct += (y == p.argmax(dim=1)).sum().item()
+            n_processed += y.shape[0]
+            n_batches += 1
 
-            progress.set_postfix({'t1': t1})
-            if len(all_results) == 0 or not ((all_results.t1 == t1) & (all_results.test_tol == tol)).any():
-                result = evaluate(test_loader, model, t1, tol, args)
-                t1_results = t1_results.append(result, ignore_index=True).sort_values('t1').reset_index(drop=True)
-                all_results = all_results.append(result, ignore_index=True)
-                all_results.to_csv(run.path_to('results'), index=False)
-            else:
-                progress.write('Skipping: t1={:g}, tol={:g}'.format(t1, tol))
+            logloss = loss.item() / n_processed
+            accuracy = n_correct / n_processed
+            nfe = nfe_forward / n_batches
+            metrics = {
+                'loss': f'{logloss:4.3f}',
+                'acc': f'{n_correct:4d}/{n_processed:4d} ({accuracy:.2%})',
+                'nfe': f'{nfe:3.1f}'
+            }
+            progress.set_postfix(metrics)
 
-            progress.update(1)
-            n_evals += 1
+        metrics = {'t1': t1, 'test_loss': logloss, 'test_acc': accuracy, 'test_nfe': nfe, 'test_tol': tol}
+        return metrics
+    
+    progress = tqdm(itertools.product(args.tol, args.t1))
+    for tol, t1 in progress:
+        if 't1' in results.columns and 'test_tol' in results.columns and ((results.t1 == t1) & (results.test_tol == tol)).any():
+            print(f'Skipping tol={tol} t1={t1} ...')
+            continue
+
+        progress.set_postfix({'tol': tol, 't1': t1})
+        result = _evaluate(test_loader, model, t1, tol, args)
+        results = results.append(result, ignore_index=True)
+        results.to_csv(results_file, index=False)
 
 
 def accuracy(args):
@@ -231,13 +208,22 @@ def accuracy(args):
     model.eval()
 
     t1 = torch.arange(0, 1.05, .05)  # from 0 to 1 w/ .05 step
-    T = len(t1)
     model.odeblock.t1 = t1[1:]  # 0 is implicit
     model.odeblock.return_last_only = False
+    
+    if params.downsample == 'ode2':
+        model.downsample.odeblock.t1 = t1[1:] # 0 is implicit
+        model.downsample.odeblock.return_last_only = False
+        model.downsample.odeblock.apply_conv = True
+        t1 = torch.cat((t1, t1))
+        
+    T = len(t1)
 
     def _evaluate(loader, model, tol, args):
         model.odeblock.tol = tol
-
+        if 'ode' in params.downsample:
+            model.downsample.odeblock.tol = tol
+            
         n_batches = 0
         n_processed = 0
         nfe_forward = 0
@@ -397,11 +383,11 @@ if __name__ == '__main__':
     parser.set_defaults(cuda=True, force=False)
     subparsers = parser.add_subparsers()
 
-    parser_test = subparsers.add_parser('test')
-    parser_test.add_argument('run')
-    parser_test.add_argument('-t', '--tol', type=float, nargs='+', default=[0.001, 0.01, 0.1, 1, 10, 100])
-    parser_test.add_argument('-n', '--num-evals', type=int, default=15)
-    parser_test.set_defaults(func=test)
+    parser_tradeoff = subparsers.add_parser('tradeoff')
+    parser_tradeoff.add_argument('run')
+    parser_tradeoff.add_argument('--tol', type=float, nargs='+', default=[0.001, 0.01, 0.1, 1, 10, 100])
+    parser_tradeoff.add_argument('--t1', type=float, nargs='+', default=np.arange(0.05, 1.05, .05).tolist())
+    parser_tradeoff.set_defaults(func=tradeoff)
 
     parser_accuracy = subparsers.add_parser('accuracy')
     parser_accuracy.add_argument('run')
