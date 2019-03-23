@@ -200,12 +200,12 @@ if __name__ == '__main__':
                 f'Filter {string} is not in format <param1>=<value1>[, <param2>=<value2>[, ...]]')
         filters = string.split(',')
         filters = map(lambda x: x.split('='), filters)
-        filters = list(filters)
+        filters = {k: v for k, v in filters}
         return filters
 
 
     parser = argparse.ArgumentParser(description='Plot stuff')
-    parser.add_argument('-f', '--filter', default=[], type=run_filter)
+    parser.add_argument('-f', '--filter', default={}, type=run_filter)
     subparsers = parser.add_subparsers()
 
     parser_train = subparsers.add_parser('train')
