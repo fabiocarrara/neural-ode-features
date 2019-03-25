@@ -51,13 +51,18 @@ def t1(args):
     r = results.loc[:, ~unique_cols]
     metric_cols = {'t1', 'test_acc', 'test_loss', 'test_nfe'}
 
-    f, (ax1, ax2) = plt.subplots(2, sharex=True)
+    plt.figure(figsize=(10, 6))
+    ax1 = plt.subplot2grid((2, 2), (0, 0))
+    ax2 = plt.subplot2grid((2, 2), (1, 0))
+    ax3 = plt.subplot2grid((2, 2), (1, 1))
 
     title = Experiment.abbreviate(common_params, main='model')
     ax1.set_title(title)
     ax1.set_ylabel('Test Accuracy')
     ax2.set_ylabel('Test NFE')
     ax2.set_xlabel('ODE final integration time $t_1$')
+    ax3.set_ylabel('Test Accuracy')
+    ax3.set_xlabel('Test NFE')
 
     if set(r.columns) == metric_cols:  # single line plot
         r = r.sort_values('t1')
@@ -76,6 +81,7 @@ def t1(args):
             r = group.sort_values('t1')
             ax1.plot(r.t1, r.test_acc, label=name, marker='.')
             ax2.plot(r.t1, r.test_nfe, label=name, marker='.')
+            ax3.plot(r.test_nfe, r.test_acc, label=name, marker='.')
 
         ax1.legend(bbox_to_anchor=(1, 1), loc="upper left")
 
@@ -147,47 +153,48 @@ def clean(args):
                 print(command)
                 os.system(command)
 
+
 def retrieval(args):
     assert Experiment.is_exp_dir(args.run), "Not a run dir: args.run"
     run = Experiment.from_dir(args.run, main='model')
-    results_file = run.path_to('retrieval.csv')
 
-    assert os.path.exists(results_file), f"Results file not found: {results_file}"
+    retrieval_results_file = run.path_to('retrieval.csv')
+    assert os.path.exists(retrieval_results_file), f"Retrieval results file not found: {retrieval_results_file}"
 
-    results = pd.read_csv(results_file)
-    # t1s, mean_aps_sym, mean_aps_asym = results.loc[:, ['t1', 'mean_ap_sym', 'mean_ap_asym']]
+    results = pd.read_csv(retrieval_results_file)
 
-    plt.figure(figsize=(15,5))
-    ax = plt.gca()
-    results.plot('t1', 'mean_ap_sym', marker='.', label='sym', ax=ax)
-    results.plot('t1', 'mean_ap_asym', marker='.', label='asym', ax=ax)
-    # plt.axhline(mean_ap_res, c='k', label='resnet')
+    f, (ax1, ax2) = plt.subplots(1, 2, sharey=True, figsize=(10, 5))
+    results.plot('t1', 'mean_ap_sym', marker='.', label='sym', ax=ax1)
+    results.plot('t1', 'mean_ap_asym', marker='.', label='asym', ax=ax1)
     max_diff = (results.mean_ap_asym - results.mean_ap_sym).max()
     print(f'Asym-sym max difference: {max_diff:%}')
-    # plt.plot(t1s, mean_aps_asym - mean_aps_sym, marker='.', label='diff')
 
-    plt.title('mAP vs Feature Depth (t) - CIFAR-10')
-    plt.xlabel('Integration time')
-    plt.ylabel('mAP')
-    # plt.ylim([0, 1])
-    plt.legend(loc='best')
+    tradeoff_results_file = run.path_to('tradeoff.csv')
+    assert os.path.exists(tradeoff_results_file), f"Tradeoff results file not found: {tradeoff_results_file}"
+    tradeoff_results = pd.read_csv(tradeoff_results_file)
+    tradeoff_results = tradeoff_results[tradeoff_results.test_tol == 0.001]
 
-    ''' NFE sectioning
-    ns = np.diff(nfe)
-    xv = np.diff(t1s)/2
-    xv[1:] += t1s[1:-1]
-    xv = xv[ns != 0]
+    merged_results = results.merge(tradeoff_results, on='t1')
 
-    for x in xv:
-        plt.axvline(x, c='k', ls='--')
+    ax2.plot(merged_results.test_nfe, merged_results.mean_ap_sym, marker='.', label='sym')
+    ax2.plot(merged_results.test_nfe, merged_results.mean_ap_asym, marker='.', label='asym')
 
-    xv = np.array([0, ] + xv.tolist() + [1,])
-    xl = np.diff(xv) / 2
-    xl[1:] += xv[1:-1]
+    if args.baseline:
+        assert Experiment.is_exp_dir(args.baseline), "Not a run dir: args.run"
+        baseline_run = Experiment.from_dir(args.baseline, main='model')
+        baseline_results_file = baseline_run.path_to('retrieval.csv')
+        assert os.path.exists(baseline_results_file), f"Results file for baseline not found: {baseline_results_file}"
+        baseline_results = pd.read_csv(baseline_results_file)
 
-    for x, n in zip(xl, np.unique(nfe)):
-        plt.annotate('NFE = {:.1f}'.format(n), (x, .2), rotation=90, ha='center', va='center')
-    '''
+        ax1.axhline(baseline_results.mean_ap.iloc[0], c='k', label='resnet')
+        ax2.axhline(baseline_results.mean_ap.iloc[0], c='k', label='resnet')
+
+    dataset = run.params.dataset.iloc[0].upper()
+    plt.suptitle('mAP vs Feature Depth (t) - {}'.format(dataset))
+    ax1.set_ylabel('mAP')
+    ax1.set_xlabel('Integration time')
+    ax2.set_xlabel('Test NFE')
+    ax1.legend(loc='best')
 
     plt.savefig(args.output, bbox_inches="tight")
 
@@ -240,6 +247,7 @@ if __name__ == '__main__':
 
     parser_retrieval = subparsers.add_parser('retrieval')
     parser_retrieval.add_argument('run', default='runs/')
+    parser_retrieval.add_argument('-b', '--baseline', help='run to be treated as baseline')
     parser_retrieval.add_argument('-o', '--output', default='retrieval.pdf')
     parser_retrieval.set_defaults(func=retrieval)
 
