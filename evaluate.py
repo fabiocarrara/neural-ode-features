@@ -28,11 +28,10 @@ def features(args):
 
     features_file = 'features.h5' if args.data is None else 'features-{}.h5'.format(args.data)
     features_file = run.path_to(features_file)
-    results_file = run.path_to('results')
     dependecy_file = run.ckpt('best')
 
     if os.path.exists(features_file) and os.path.getctime(features_file) >= os.path.getctime(dependecy_file) and not args.force:
-        print('Skipping...')
+        print('Features file already exists, skipping...')
         sys.exit(0)
 
     if args.data == 'tiny-imagenet-200':
@@ -52,18 +51,11 @@ def features(args):
     model.to_features_extractor()
 
     if params.model == 'odenet':
-        if os.path.exists(results_file):  # reuse t1s if already tested
-            results = pd.read_csv(results_file)
-            results = results[results.t1 <= 1]
-            t1s = results.t1.sort_values().unique()
-        else:
-            t1s = np.arange(.05, 1.05, .05)  # from 0 to 1 w/ .05 step
-
-        model.odeblock.t1 = t1s.tolist()
+        model.odeblock.t1 = args.t1
         if 'ode' in params.downsample:
-            model.downsample.odeblock.t1 = t1s.tolist()
+            model.downsample.odeblock.t1 = args.t1
 
-        t1s = np.insert(t1s, 0, 0)  # add 0 at the beginning
+        t1s = np.array([0,] + args.t1)  # add 0 at the beginning
 
     features = []
     y_true = []
@@ -304,7 +296,7 @@ def retrieval(args):
         if params.model == 'odenet':
             t1s = f['t1s'][...]
 
-    features /= np.linalg.norm(features, axis=-2, keepdims=True)
+    features /= np.linalg.norm(features, axis=-2, keepdims=True) + 1e-7
 
     queries = features  # all queries
 
@@ -402,6 +394,7 @@ if __name__ == '__main__':
     parser_features = subparsers.add_parser('features')
     parser_features.add_argument('run')
     parser_features.add_argument('-d', '--data', default=None, choices=('tiny-imagenet-200',))
+    parser_features.add_argument('--t1', type=float, nargs='+', default=np.arange(0.05, 1.05, .05).tolist())
     parser_features.set_defaults(func=features)
 
     parser_retrieval = subparsers.add_parser('retrieval')
