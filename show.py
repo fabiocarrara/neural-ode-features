@@ -43,7 +43,7 @@ def t1(args):
     exps = Experiment.gather(args.run, main='model')
     exps = Experiment.filter(args.filter, exps)
 
-    results = Experiment.collect_all(exps, 'results')
+    results = Experiment.collect_all(exps, 'tradeoff.csv')
 
     unique_cols = results.apply(pd.Series.nunique) == 1
     common_params = results.loc[:, unique_cols].iloc[0]
