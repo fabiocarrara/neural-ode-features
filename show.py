@@ -102,7 +102,7 @@ def best(args):
     else:
         results = Experiment.collect_all(exps, 'results')
 
-    metric_cols = {'epoch', 't1', 'test_acc', 'test_loss', 'test_nfe', 'test_tol', 'acc', 'loss'}
+    metric_cols = {'epoch', 't1', 'test_acc', 'test_loss', 'test_nfe', 'test_tol', 'acc', 'loss', 'nfe-f', 'nfe-b'}
     grouping_cols = results.columns.difference(metric_cols).tolist()
 
     idx_acc_max = results.groupby(grouping_cols)['test_acc'].idxmax()
