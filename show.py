@@ -237,9 +237,9 @@ if __name__ == '__main__':
     parser_best.add_argument('-l', action='store_true', default=False, help='get best accuracy from log')
     parser_best.set_defaults(func=best)
 
-    parser_nfe = subparsers.add_parser('nparams')
-    parser_nfe.add_argument('run', default='runs/')
-    parser_nfe.set_defaults(func=nparams)
+    parser_nparams = subparsers.add_parser('nparams')
+    parser_nparams.add_argument('run', default='runs/')
+    parserparser_nparams_nfe.set_defaults(func=nparams)
 
     parser_clean = subparsers.add_parser('clean')
     parser_clean.add_argument('run', default='runs/')
