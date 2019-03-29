@@ -82,34 +82,50 @@ def features(args):
 def nfe(args):
     run = Experiment.from_dir(args.run, main='model')
     print(run)
-    results_file = run.path_to('nfe.csv')
+    results_file = run.path_to('nfe.csv.gz')
     best_ckpt_file = run.ckpt('best')
 
+    results = pd.DataFrame()
     # check if results exists and are updated, then skip the computation
     if os.path.exists(results_file) and os.path.getctime(results_file) >= os.path.getctime(
             best_ckpt_file) and not args.force:
-        print('Skipping...')
-        return
+        results = pd.read_csv(results_file, float_precision='round_trip')
 
     test_data = load_test_data(run)
     test_loader = DataLoader(test_data, batch_size=1, shuffle=False)
-
+    
     model = load_model(run)
     model = model.to(args.device)
     model.eval()
-    model.odeblock.tol = args.tol
 
-    def process(datum):
-        x, y = datum
-        x = x.to(args.device)
-        p = model(x)
-        nfe = model.nfe(reset=True)
-        pred = p.argmax(dim=1).item()
-        y = y.item()
-        return {'y_true': y, 'y_pred': pred, 'nfe': nfe}
+    def _nfe(test_loader, model, t1, tol, args):
+        model.odeblock.t1 = t1
+        model.odeblock.tol = tol
+        
+        y_true = []
+        y_pred = []
+        nfes = []
+        
+        for x, y in tqdm(test_loader):
+            y_true.append( y.item() )
+            y_pred.append( model(x.to(args.device)).argmax(dim=1).item() )
+            nfes.append( model.nfe(reset=True) )
+            
+        return {'y_true': y_true, 'y_pred': y_pred, 'nfe': nfes}
 
-    data = [process(d) for d in tqdm(test_loader)]
-    pd.DataFrame(data).to_csv(results_file)
+    progress = tqdm(itertools.product(args.tol, args.t1))
+    for tol, t1 in progress:
+        if 't1' in results.columns and 'test_tol' in results.columns and ((results.t1 == t1) & (results.test_tol == tol)).any():
+            print(f'Skipping tol={tol} t1={t1} ...')
+            continue
+
+        progress.set_postfix({'tol': tol, 't1': t1})
+        result = _nfe(test_loader, model, t1, tol, args)
+        result = pd.DataFrame(result)
+        result['t1'] = t1
+        result['tol'] = tol
+        results = results.append(result, ignore_index=True)
+        results.to_csv(results_file, index=False)
 
 
 def tradeoff(args):
@@ -122,7 +138,7 @@ def tradeoff(args):
     # check if results exists and are updated, then load them (and probably skip the computation them later)
     if os.path.exists(results_file) and os.path.getctime(results_file) >= os.path.getctime(
             best_ckpt_file) and not args.force:
-        results = pd.read_csv(results_file)
+        results = pd.read_csv(results_file, float_precision='round_trip')
 
     params = next(run.params.itertuples())
 
@@ -188,7 +204,7 @@ def accuracy(args):
     # check if results exists and are updated, then load them (and probably skip the computation them later)
     if os.path.exists(results_file) and os.path.getctime(results_file) >= os.path.getctime(
             best_ckpt_file) and not args.force:
-        all_results = pd.read_csv(results_file)
+        all_results = pd.read_csv(results_file, float_precision='round_trip')
 
     params = next(run.params.itertuples())
 
@@ -286,7 +302,7 @@ def retrieval(args):
     # check if results exists and are updated, then load them (and probably skip the computation them later)
     if os.path.exists(results_file) and os.path.getctime(results_file) >= os.path.getctime(
             features_file) and not args.force:
-        all_results = pd.read_csv(results_file)
+        all_results = pd.read_csv(results_file, float_precision='round_trip')
 
     params = next(exp.params.itertuples())
 
@@ -388,7 +404,8 @@ if __name__ == '__main__':
 
     parser_nfe = subparsers.add_parser('nfe')
     parser_nfe.add_argument('run')
-    parser_nfe.add_argument('-t', '--tol', type=float, default=1e-3)
+    parser_nfe.add_argument('--tol', type=float, nargs='+', default=[0.001, 0.01, 0.1, 1, 10, 100])
+    parser_nfe.add_argument('--t1', type=float, nargs='+', default=np.arange(0.05, 1.05, .05).tolist())
     parser_nfe.set_defaults(func=nfe)
 
     parser_features = subparsers.add_parser('features')
