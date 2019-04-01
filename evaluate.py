@@ -1,4 +1,5 @@
 import argparse
+import itertools
 import os
 import sys
 
@@ -7,8 +8,6 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-import itertools
-
 from sklearn.metrics import average_precision_score
 from sklearn.model_selection import GridSearchCV
 from sklearn.svm import LinearSVC
@@ -55,7 +54,7 @@ def features(args):
         if 'ode' in params.downsample:
             model.downsample.odeblock.t1 = args.t1
 
-        t1s = np.array([0,] + args.t1)  # add 0 at the beginning
+        t1s = np.array([0, ] + args.t1)  # add 0 at the beginning
 
     features = []
     y_true = []
@@ -92,7 +91,7 @@ def nfe(args):
 
     test_data = load_test_data(run)
     test_loader = DataLoader(test_data, batch_size=1, shuffle=False)
-    
+
     model = load_model(run)
     model = model.to(args.device)
     model.eval()
@@ -100,16 +99,16 @@ def nfe(args):
     def _nfe(test_loader, model, t1, tol, args):
         model.odeblock.t1 = t1
         model.odeblock.tol = tol
-        
+
         y_true = []
         y_pred = []
         nfes = []
-        
+
         for x, y in tqdm(test_loader):
-            y_true.append( y.item() )
-            y_pred.append( model(x.to(args.device)).argmax(dim=1).item() )
-            nfes.append( model.nfe(reset=True) )
-            
+            y_true.append(y.item())
+            y_pred.append(model(x.to(args.device)).argmax(dim=1).item())
+            nfes.append(model.nfe(reset=True))
+
         return {'y_true': y_true, 'y_pred': y_pred, 'nfe': nfes}
 
     progress = tqdm(itertools.product(args.tol, args.t1))
@@ -147,7 +146,7 @@ def tradeoff(args):
     model = load_model(run)
     model = model.to(args.device)
     model.eval()
-    
+
     def _evaluate(loader, model, t1, tol, args):
         model.odeblock.t1 = t1
         model.odeblock.tol = tol
@@ -180,7 +179,7 @@ def tradeoff(args):
 
         metrics = {'t1': t1, 'test_loss': logloss, 'test_acc': accuracy, 'test_nfe': nfe, 'test_tol': tol}
         return metrics
-    
+
     progress = tqdm(itertools.product(args.tol, args.t1))
     for tol, t1 in progress:
         if 't1' in results.columns and 'test_tol' in results.columns and ((results.t1 == t1) & (results.test_tol == tol)).any():
@@ -217,20 +216,20 @@ def accuracy(args):
     t1 = torch.arange(0, 1.05, .05)  # from 0 to 1 w/ .05 step
     model.odeblock.t1 = t1[1:]  # 0 is implicit
     model.odeblock.return_last_only = False
-    
+
     if params.downsample == 'ode2':
-        model.downsample.odeblock.t1 = t1[1:] # 0 is implicit
+        model.downsample.odeblock.t1 = t1[1:]  # 0 is implicit
         model.downsample.odeblock.return_last_only = False
         model.downsample.odeblock.apply_conv = True
         t1 = torch.cat((t1, t1))
-        
+
     T = len(t1)
 
     def _evaluate(loader, model, tol, args):
         model.odeblock.tol = tol
         if 'ode' in params.downsample:
             model.downsample.odeblock.tol = tol
-            
+
         n_batches = 0
         n_processed = 0
         nfe_forward = 0
@@ -337,7 +336,7 @@ def retrieval(args):
             all_results.to_csv(results_file, index=False)
     else:  # resnet
         aps = score(features, features, gt)
-        results = pd.DataFrame({'aps': aps})
+        results = pd.DataFrame({'ap': aps})
         all_results = all_results.append(results, ignore_index=True)
         all_results.to_csv(results_file, index=False)
 
