@@ -324,19 +324,21 @@ def retrieval(args):
     def score(queries, db, gt):
         scores = queries.dot(db.T)
         aps = [average_precision_score(gt[i], scores[i]) for i in trange(n_queries)]
-        return np.mean(aps)
+        return aps
 
     if params.model == 'odenet':
         for i, t1 in enumerate(tqdm(t1s)):
             # TODO check and skip
-            mean_ap_asym = score(queries[i], features[-1], gt)  # t1 = 1 for db
-            mean_ap_sym = score(queries[i], features[i], gt)  # t1 same for queries and db
-            results = {'t1': t1, 'mean_ap_asym': mean_ap_asym, 'mean_ap_sym': mean_ap_sym}
+            aps_asym = score(queries[i], features[-1], gt)  # t1 = 1 for db
+            aps_sym = score(queries[i], features[i], gt)  # t1 same for queries and db
+            results = pd.DataFrame({'ap_asym': aps_asym, 'ap_sym': aps_sym})
+            results['t1'] = t1
             all_results = all_results.append(results, ignore_index=True)
             all_results.to_csv(results_file, index=False)
     else:  # resnet
-        mean_ap = score(features, features, gt)
-        all_results = all_results.append({'mean_ap': mean_ap}, ignore_index=True)
+        aps = score(features, features, gt)
+        results = pd.DataFrame({'aps': aps})
+        all_results = all_results.append(results, ignore_index=True)
         all_results.to_csv(results_file, index=False)
 
 
