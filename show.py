@@ -5,15 +5,82 @@ import matplotlib
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.legend_handler import HandlerLine2D
+
 import seaborn as sns
 
-sns.set()
+sns.set(style='whitegrid', context='notebook')
 
 import pandas as pd
 
 from tqdm import tqdm
 from utils import load_model
 from expman import Experiment
+
+
+def tradeoff(args):
+    exps = Experiment.gather(args.run, main='model')
+    exps = Experiment.filter(args.filter, exps)
+    
+    results = Experiment.collect_all(exps, 'nfe.csv.gz')
+    results = results.sort_values('downsample')
+    
+    assert results.dataset.nunique() == 1, "This plot should be drawn with only runs on a single dataset"
+    dataset = results.dataset.values[0]
+    
+    results['epsilon'] = 1 - results.t1
+    results['test error'] = 100 * (results.y_pred != results.y_true)
+    
+    fig = plt.figure()
+    ax = plt.gca()
+    
+    handles = []
+    labels = []
+    label_map = {'residual': 'ODE-Net', 'one-shot': 'Full-ODE-Net'}
+    
+    sns.lineplot(x='epsilon', y='test error', hue='downsample', style='downsample', ci='sd', markers=('o','o'), dashes=False, data=results, ax=ax)
+    ax.set_ylim([0, 100])
+    ax.set_xlabel(r'$\mathrm{\mathit{\varepsilon}}$ (time anticipation)')
+    ax.set_ylabel(r'test error %')
+    
+    h, l = ax.get_legend_handles_labels()
+    
+    for hi, li in zip(h[1:], l[1:]):
+        hh = Line2D([],[])
+        hh.update_from(hi)
+        hh.set_marker(None)
+        handles.append(hh)
+        labels.append(label_map[li])
+        
+    ax.get_legend().remove()
+    
+    ax2 = plt.twinx()
+    sns.lineplot(x='epsilon', y='nfe', hue='downsample', style='downsample', ci='sd', markers=('X','X'), dashes=False, data=results, ax=ax2, legend=False)
+    # ax2.set_ylabel(r'number of function evaluations (NFE)')
+    ax2.set_ylabel(r'NFE')
+    ax2.set_ylim([0, ax2.get_ylim()[1] * .9])
+    
+    handles.extend([
+        Line2D([], [], marker='o', markerfacecolor='k', markeredgecolor='w', color='k'),
+        Line2D([], [], marker='X', markerfacecolor='k', markeredgecolor='w', color='k'),
+    ])    
+    labels.extend(['error', 'nfe'])
+    
+    handler_map = {h: HandlerLine2D(marker_pad=0) for h in handles[-2:]}
+    legend = plt.legend(handles=handles, labels=labels, loc='upper center', ncol=2, handler_map=handler_map)
+    
+    plt.minorticks_on()
+    ax.get_xaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+    ax.get_yaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+    # ax2.get_xaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+    ax2.set_yticks(pd.np.linspace(ax2.get_yticks()[0], ax2.get_yticks()[-1], len(ax.get_yticks())))
+    
+    ax.grid(b=True, which='minor', linewidth=0.5, linestyle='--')
+    ax2.grid(False)
+    plt.xlim(0, 1)
+    
+    plt.savefig(args.output, bbox_inches="tight")        
 
 
 def train(args):
@@ -214,6 +281,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Plot stuff')
     parser.add_argument('-f', '--filter', default={}, type=run_filter)
     subparsers = parser.add_subparsers()
+
+    parser_tradeoff = subparsers.add_parser('tradeoff')
+    parser_tradeoff.add_argument('run', default='runs/')
+    parser_tradeoff.add_argument('-o', '--output', default='tradeoff.pdf')
+    parser_tradeoff.set_defaults(func=tradeoff)
 
     parser_train = subparsers.add_parser('train')
     parser_train.add_argument('run', default='runs/')
