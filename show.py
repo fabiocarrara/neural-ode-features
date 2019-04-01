@@ -239,7 +239,7 @@ if __name__ == '__main__':
 
     parser_nparams = subparsers.add_parser('nparams')
     parser_nparams.add_argument('run', default='runs/')
-    parserparser_nparams_nfe.set_defaults(func=nparams)
+    parser_nparams.set_defaults(func=nparams)
 
     parser_clean = subparsers.add_parser('clean')
     parser_clean.add_argument('run', default='runs/')
