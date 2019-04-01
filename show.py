@@ -22,65 +22,66 @@ from expman import Experiment
 def tradeoff(args):
     exps = Experiment.gather(args.run, main='model')
     exps = Experiment.filter(args.filter, exps)
-    
+
     results = Experiment.collect_all(exps, 'nfe.csv.gz')
     results = results.sort_values('downsample')
-    
+
     assert results.dataset.nunique() == 1, "This plot should be drawn with only runs on a single dataset"
-    dataset = results.dataset.values[0]
-    
+
     results['epsilon'] = 1 - results.t1
     results['test error'] = 100 * (results.y_pred != results.y_true)
-    
-    fig = plt.figure()
+
+    plt.figure()
     ax = plt.gca()
-    
+
     handles = []
     labels = []
     label_map = {'residual': 'ODE-Net', 'one-shot': 'Full-ODE-Net'}
-    
-    sns.lineplot(x='epsilon', y='test error', hue='downsample', style='downsample', ci='sd', markers=('o','o'), dashes=False, data=results, ax=ax)
+
+    sns.lineplot(x='epsilon', y='test error', hue='downsample', style='downsample', ci='sd', markers=('o', 'o'),
+                 dashes=False, data=results, ax=ax)
     ax.set_ylim([0, 100])
     ax.set_xlabel(r'$\mathrm{\mathit{\varepsilon}}$ (time anticipation)')
     ax.set_ylabel(r'test error %')
-    
+
     h, l = ax.get_legend_handles_labels()
-    
+
     for hi, li in zip(h[1:], l[1:]):
-        hh = Line2D([],[])
+        hh = Line2D([], [])
         hh.update_from(hi)
         hh.set_marker(None)
         handles.append(hh)
         labels.append(label_map[li])
-        
+
     ax.get_legend().remove()
-    
+
     ax2 = plt.twinx()
-    sns.lineplot(x='epsilon', y='nfe', hue='downsample', style='downsample', ci='sd', markers=('X','X'), dashes=False, data=results, ax=ax2, legend=False)
+    sns.lineplot(x='epsilon', y='nfe', hue='downsample', style='downsample', ci='sd', markers=('X', 'X'), dashes=False,
+                 data=results, ax=ax2, legend=False)
     # ax2.set_ylabel(r'number of function evaluations (NFE)')
     ax2.set_ylabel(r'NFE')
     ax2.set_ylim([0, ax2.get_ylim()[1] * .9])
-    
+
     handles.extend([
         Line2D([], [], marker='o', markerfacecolor='k', markeredgecolor='w', color='k'),
         Line2D([], [], marker='X', markerfacecolor='k', markeredgecolor='w', color='k'),
-    ])    
+    ])
     labels.extend(['error', 'nfe'])
-    
+
     handler_map = {h: HandlerLine2D(marker_pad=0) for h in handles[-2:]}
-    legend = plt.legend(handles=handles, labels=labels, loc='upper center', ncol=2, handler_map=handler_map)
-    
+    plt.legend(handles=handles, labels=labels, loc='upper center', ncol=2, handler_map=handler_map)
+
     plt.minorticks_on()
     ax.get_xaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
     ax.get_yaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
     # ax2.get_xaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
     ax2.set_yticks(pd.np.linspace(ax2.get_yticks()[0], ax2.get_yticks()[-1], len(ax.get_yticks())))
-    
+
     ax.grid(b=True, which='minor', linewidth=0.5, linestyle='--')
     ax2.grid(False)
     plt.xlim(0, 1)
-    
-    plt.savefig(args.output, bbox_inches="tight")        
+
+    plt.savefig(args.output, bbox_inches="tight")
 
 
 def train(args):
@@ -222,29 +223,33 @@ def clean(args):
 
 
 def retrieval(args):
-    assert Experiment.is_exp_dir(args.run), "Not a run dir: args.run"
-    run = Experiment.from_dir(args.run, main='model')
+    exps = Experiment.gather(args.run, main='model')
+    exps = Experiment.filter(args.filter, exps)
 
-    retrieval_results_file = run.path_to('retrieval.csv')
-    assert os.path.exists(retrieval_results_file), f"Retrieval results file not found: {retrieval_results_file}"
+    results = Experiment.collect_all(exps, 'retrieval.csv')
+    results = results.sort_values('downsample')
 
-    results = pd.read_csv(retrieval_results_file)
+    assert results.dataset.nunique() == 1, "This plot should be drawn with only runs on a single dataset"
 
-    f, (ax1, ax2) = plt.subplots(1, 2, sharey=True, figsize=(10, 5))
-    results.plot('t1', 'mean_ap_sym', marker='.', label='sym', ax=ax1)
-    results.plot('t1', 'mean_ap_asym', marker='.', label='asym', ax=ax1)
-    max_diff = (results.mean_ap_asym - results.mean_ap_sym).max()
-    print(f'Asym-sym max difference: {max_diff:%}')
+    ci = None
 
-    tradeoff_results_file = run.path_to('tradeoff.csv')
-    assert os.path.exists(tradeoff_results_file), f"Tradeoff results file not found: {tradeoff_results_file}"
-    tradeoff_results = pd.read_csv(tradeoff_results_file)
-    tradeoff_results = tradeoff_results[tradeoff_results.test_tol == 0.001]
+    plt.figure()
+    ax = plt.gca()
 
-    merged_results = results.merge(tradeoff_results, on='t1')
+    sns.lineplot(x='t1', y='ap_sym', hue='downsample', style='downsample', ci=ci, markers=('o', 'o'), dashes=False,
+                 data=results, ax=ax)
+    sns.lineplot(x='t1', y='ap_asym', hue='downsample', style='downsample', ci=ci, markers=('o', 'o'),
+                 dashes=((2, 2), (2, 2)), data=results, ax=ax)
 
-    ax2.plot(merged_results.test_nfe, merged_results.mean_ap_sym, marker='.', label='sym')
-    ax2.plot(merged_results.test_nfe, merged_results.mean_ap_asym, marker='.', label='asym')
+    label_map = {'residual': 'ODE-Net', 'one-shot': 'Full-ODE-Net'}
+
+    h, l = ax.get_legend_handles_labels()
+    h_and_l = zip(h, l)
+    h_and_l = sorted(h_and_l, key=lambda x: x[1], reverse=True)
+    h_and_l = (
+        (h, '{}, {}'.format(label_map[l], 'asymmetric' if h.is_dashed() else 'symmetric'))
+        for h, l in h_and_l if l in label_map)
+    h, l = zip(*h_and_l)
 
     if args.baseline:
         assert Experiment.is_exp_dir(args.baseline), "Not a run dir: args.run"
@@ -253,16 +258,26 @@ def retrieval(args):
         assert os.path.exists(baseline_results_file), f"Results file for baseline not found: {baseline_results_file}"
         baseline_results = pd.read_csv(baseline_results_file)
 
-        ax1.axhline(baseline_results.mean_ap.iloc[0], c='k', label='resnet')
-        ax2.axhline(baseline_results.mean_ap.iloc[0], c='k', label='resnet')
+        b1 = baseline_results.copy()
+        b1['t1'] = 0
+        b2 = baseline_results.copy()
+        b2['t1'] = 1
+        baseline_results = pd.concat((b1, b2), ignore_index=True)
+        sns.lineplot(x='t1', y='ap', ci=ci, color='k', data=baseline_results, ax=ax)
+        h += (ax.lines[-1],)
+        l += ('ResNet',)
 
-    dataset = run.params.dataset.iloc[0].upper()
-    plt.suptitle('mAP vs Feature Depth (t) - {}'.format(dataset))
-    ax1.set_ylabel('mAP')
-    ax1.set_xlabel('Integration time')
-    ax2.set_xlabel('Test NFE')
-    ax1.legend(loc='best')
+    # plt.title(dataset)
+    plt.xlabel(r'$\mathrm{\mathit{t}}$ (final hidden state time)')
+    plt.ylabel(r'mean Average Precision')
+    plt.xlim(0, 1)
+    plt.ylim(0, 1)
 
+    ax.get_xaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+    ax.get_yaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+    ax.grid(b=True, which='minor', linewidth=0.5, linestyle='--')
+
+    plt.legend(handles=h, labels=l, loc='best', ncol=1)
     plt.savefig(args.output, bbox_inches="tight")
 
 
