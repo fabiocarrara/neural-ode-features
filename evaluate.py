@@ -87,8 +87,7 @@ def nfe(args):
 
     results = pd.DataFrame()
     # check if results exists and are updated, then skip the computation
-    if os.path.exists(results_file) and os.path.getctime(results_file) >= os.path.getctime(
-            best_ckpt_file) and not args.force:
+    if os.path.exists(results_file) and os.path.getctime(results_file) >= os.path.getctime(best_ckpt_file) and not args.force:
         results = pd.read_csv(results_file, float_precision='round_trip')
 
     test_data = load_test_data(run)
@@ -115,7 +114,7 @@ def nfe(args):
 
     progress = tqdm(itertools.product(args.tol, args.t1))
     for tol, t1 in progress:
-        if 't1' in results.columns and 'test_tol' in results.columns and ((results.t1 == t1) & (results.test_tol == tol)).any():
+        if 't1' in results.columns and 'tol' in results.columns and ((results.t1 == t1) & (results.test_tol == tol)).any():
             print(f'Skipping tol={tol} t1={t1} ...')
             continue
 
@@ -405,7 +404,7 @@ if __name__ == '__main__':
     parser_nfe = subparsers.add_parser('nfe')
     parser_nfe.add_argument('run')
     parser_nfe.add_argument('--tol', type=float, nargs='+', default=[0.001, 0.01, 0.1, 1, 10, 100])
-    parser_nfe.add_argument('--t1', type=float, nargs='+', default=np.arange(0.05, 1.05, .05).tolist())
+    parser_nfe.add_argument('--t1', type=float, nargs='+', default=np.arange(0, 1.05, .05).tolist())
     parser_nfe.set_defaults(func=nfe)
 
     parser_features = subparsers.add_parser('features')
