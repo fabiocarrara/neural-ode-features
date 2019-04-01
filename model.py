@@ -321,6 +321,9 @@ class ODEBlock(nn.Module):
         self.return_last_only = True
 
     def forward(self, x):
+        if self.integration_time is None:
+            return x
+    
         self.integration_time = self.integration_time.type_as(x)
         out = self.odeint(self.odefunc, x, self.integration_time, method=self.method, rtol=self.tol, atol=self.tol)
         if self.return_last_only:
@@ -342,7 +345,10 @@ class ODEBlock(nn.Module):
     @t1.setter
     def t1(self, value):
         if isinstance(value, (int, float)):
-            self.integration_time = torch.tensor([0, value], dtype=torch.float32)
+            if value == 0:
+                self.integration_time = None
+            else:
+                self.integration_time = torch.tensor([0, value], dtype=torch.float32)
         elif isinstance(value, (list, tuple)):
             self.integration_time = torch.tensor([0, ] + list(value), dtype=torch.float32)
         elif isinstance(value, torch.Tensor):
