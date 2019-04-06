@@ -378,6 +378,10 @@ def finetune(args):
         y_true = f['y_true'][...]
         t1s = f['t1s'][...]
 
+    if args.aggregate:
+        features = features.mean(0, keepdims=True)
+        t1s = np.array([-1])
+
     block = np.zeros_like(t1s, dtype=int)
     if params.downsample == "ode":
         block = np.concatenate((block, block + 1))
@@ -441,6 +445,7 @@ if __name__ == '__main__':
     parser_finetune = subparsers.add_parser('finetune')
     parser_finetune.add_argument('run')
     parser_finetune.add_argument('-d', '--data', default=None, choices=('tiny-imagenet-200',))
+    parser_finetune.add_argument('-a', '--aggregate', default=False, action='store_true')
     parser_finetune.set_defaults(func=finetune)
     args = parser.parse_args()
 
