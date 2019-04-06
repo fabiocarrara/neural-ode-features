@@ -226,19 +226,47 @@ def retrieval(args):
     exps = Experiment.gather(args.run, main='model')
     exps = Experiment.filter(args.filter, exps)
 
-    results = Experiment.collect_all(exps, 'retrieval.csv')
-    results = results.sort_values('downsample')
+    results_file = 'retrieval.csv' if args.data is None else 'retrieval-{}.csv'.format(args.data)
+    results = Experiment.collect_all(exps, results_file)
 
-    assert results.dataset.nunique() == 1, "This plot should be drawn with only runs on a single dataset"
+    perc_scale = 100 if args.percentage else 1
+
+    sym_metric = '{}_sym'.format(args.metric)
+    asym_metric = '{}_asym'.format(args.metric)
+
+    assert sym_metric in results.columns, f'Results not available for this run: {sym_metric}'
+    assert asym_metric in results.columns, f'Results not available for this run: {asym_metric}'
+
+    results[[sym_metric, asym_metric]] *= perc_scale
+    results = results.sort_values('downsample')
+    is_baseline = (results.downsample == 'residual') & (results.model == 'resnet')
+    baseline = results[is_baseline]
+    # baseline = pd.DataFrame()
+    results = results[~is_baseline]
+
+    assert results.dataset.nunique() == 1, "This plot should be drawn with only runs on a single dataset: {}".format(results.dataset.unique())
 
     ci = None
 
     plt.figure()
     ax = plt.gca()
+    eps = 0
+    if not baseline.empty:
+        eps = .05
+        common = dict(xycoords='data', textcoords='offset points', fontsize=8, va='center', ha='center')
+        mean_aps = baseline.groupby('t1').mean().sort_values('t1')
+        for block, aps in enumerate(mean_aps.to_dict('records')):
+            if aps[sym_metric] < .95 * perc_scale:
+                ax.plot([0, 1 + eps], [aps[sym_metric]]*2, c='k', lw=.8)
+                ax.annotate(f'#{block}', xy=(1 + eps, aps[sym_metric]), xytext=(8, 0), **common)
+                
+            if aps[asym_metric] < .95 * perc_scale:
+                ax.plot([-eps, 1], [aps[asym_metric]]*2, c='k', lw=.8, ls='dashed')
+                ax.annotate(f'#{block}', xy=(-eps, aps[asym_metric]), xytext=(-8, 0), **common)
 
-    sns.lineplot(x='t1', y='ap_sym', hue='downsample', style='downsample', ci=ci, markers=('o', 'o'), dashes=False,
+    sns.lineplot(x='t1', y=sym_metric, hue='downsample', style='downsample', ci=ci, markers=('o', 'o'), dashes=False,
                  data=results, ax=ax)
-    sns.lineplot(x='t1', y='ap_asym', hue='downsample', style='downsample', ci=ci, markers=('o', 'o'),
+    sns.lineplot(x='t1', y=asym_metric, hue='downsample', style='downsample', ci=ci, markers=('o', 'o'),
                  dashes=((2, 2), (2, 2)), data=results, ax=ax)
 
     label_map = {'residual': 'ODE-Net', 'one-shot': 'Full-ODE-Net'}
@@ -250,34 +278,27 @@ def retrieval(args):
         (h, '{}, {}'.format(label_map[l], 'asymmetric' if h.is_dashed() else 'symmetric'))
         for h, l in h_and_l if l in label_map)
     h, l = zip(*h_and_l)
-
-    if args.baseline:
-        assert Experiment.is_exp_dir(args.baseline), "Not a run dir: args.run"
-        baseline_run = Experiment.from_dir(args.baseline, main='model')
-        baseline_results_file = baseline_run.path_to('retrieval.csv')
-        assert os.path.exists(baseline_results_file), f"Results file for baseline not found: {baseline_results_file}"
-        baseline_results = pd.read_csv(baseline_results_file)
-
-        b1 = baseline_results.copy()
-        b1['t1'] = 0
-        b2 = baseline_results.copy()
-        b2['t1'] = 1
-        baseline_results = pd.concat((b1, b2), ignore_index=True)
-        sns.lineplot(x='t1', y='ap', ci=ci, color='k', data=baseline_results, ax=ax)
-        h += (ax.lines[-1],)
-        l += ('ResNet',)
+    
+    if not baseline.empty:
+        h += (Line2D([], [], c='k', lw=.8), Line2D([], [], c='k', ls='dashed', lw=.8))
+        l += ('ResNet, symmetric', 'ResNet, asymmetric')
 
     # plt.title(dataset)
     plt.xlabel(r'$\mathrm{\mathit{t}}$ (final hidden state time)')
-    plt.ylabel(r'mean Average Precision')
-    plt.xlim(0, 1)
-    plt.ylim(0, 1)
+    plt.ylabel(r'mean Average Precision {}(%)'.format('@ 10 ' if args.metric == 'ap10' else ''))
+    plt.xlim(-2*eps, 1 + 2*eps)
 
-    ax.get_xaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+    y_lim = (0, perc_scale) if args.data is None else (.24 * perc_scale, .68 * perc_scale)
+    plt.ylim(*y_lim)
+
+    major_ticks = pd.np.arange(0, 1.2, 0.2)
+    minor_ticks = pd.np.arange(0, 1.05, 0.05)
+    ax.set_xticks(major_ticks)
+    ax.set_xticks(minor_ticks, minor=True)
     ax.get_yaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
     ax.grid(b=True, which='minor', linewidth=0.5, linestyle='--')
 
-    plt.legend(handles=h, labels=l, loc='best', ncol=1)
+    plt.legend(handles=h, labels=l, loc='lower center', ncol=3, prop={'size': 8})
     plt.savefig(args.output, bbox_inches="tight")
 
 
@@ -334,7 +355,9 @@ if __name__ == '__main__':
 
     parser_retrieval = subparsers.add_parser('retrieval')
     parser_retrieval.add_argument('run', default='runs/')
-    parser_retrieval.add_argument('-b', '--baseline', help='run to be treated as baseline')
+    parser_retrieval.add_argument('-p', '--percentage', default=False, action='store_true')
+    parser_retrieval.add_argument('-d', '--data', default=None, choices=('tiny-imagenet-200', 'cifar10'))
+    parser_retrieval.add_argument('-m', '--metric', default='ap', choices=('ap', 'ap10'))
     parser_retrieval.add_argument('-o', '--output', default='retrieval.pdf')
     parser_retrieval.set_defaults(func=retrieval)
 
