@@ -199,11 +199,13 @@ def load_model(exp, in_ch=None):
     if in_ch is None:
         in_ch = 1 if params.dataset == 'mnist' else 3
 
+    out = 200 if params.dataset == 'tiny-imagenet-200' else 10
+
     if params.model == 'odenet':
-        model = ODENet(in_ch, n_filters=params.filters, downsample=params.downsample, method=params.method, tol=params.tol,
+        model = ODENet(in_ch, out=out, n_filters=params.filters, downsample=params.downsample, method=params.method, tol=params.tol,
                        adjoint=params.adjoint, dropout=params.dropout)
     else:
-        model = ResNet(in_ch, n_filters=params.filters, downsample=params.downsample, dropout=params.dropout)
+        model = ResNet(in_ch, out=out, n_filters=params.filters, downsample=params.downsample, dropout=params.dropout)
 
     checkpoint = torch.load(exp.ckpt())['model']  # get best model
     model.load_state_dict(checkpoint)
