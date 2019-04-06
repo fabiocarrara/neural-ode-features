@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from sklearn.metrics import average_precision_score
 from sklearn.model_selection import GridSearchCV
 from sklearn.svm import LinearSVC
+from sklearn.externals import joblib
 from torch.utils.data import DataLoader
 from torchvision.datasets import CIFAR10
 from torchvision.transforms import transforms
@@ -382,9 +383,12 @@ def finetune(args):
         block = np.concatenate((block, block + 1))
         t1s = np.concatenate((t1s, t1s))
 
+    svm_dir = run.path_to('svms/')
+    os.makedirs(svm_dir, exist_ok=True)
+
     svm = LinearSVC()
     Cs = np.logspace(-2, 2, 5)
-    svm = GridSearchCV(svm, {'C': Cs}, scoring='accuracy', n_jobs=-1, verbose=10, cv=5)
+    svm = GridSearchCV(svm, {'C': Cs}, scoring='accuracy', n_jobs=-1, verbose=2, cv=5)
 
     for t1, b, fi in tqdm(zip(t1s, block, features)):
         if 't1' in results.columns and 'block' in results.columns and ((results.t1 == t1) & (results.block == b)).any():
@@ -395,6 +399,8 @@ def finetune(args):
         print(f'Accuracy: {score:.2%}')
         results = results.append({'block': b, 't1': t1, 'cv_accuracy': score}, ignore_index=True)
         results.to_csv(results_file, index=False)
+        svm_file = run.path_to(f'svms/svm_b{b}_t{t1}.pkl')
+        joblib.dump(svm, svm_file)
 
 
 if __name__ == '__main__':
