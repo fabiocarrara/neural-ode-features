@@ -12,6 +12,7 @@ from sklearn.metrics import average_precision_score
 from sklearn.model_selection import GridSearchCV
 from sklearn.svm import LinearSVC
 from torch.utils.data import DataLoader
+from torchvision.datasets import CIFAR10
 from torchvision.transforms import transforms
 from tqdm import tqdm, trange
 
@@ -33,7 +34,14 @@ def features(args):
         print('Features file already exists, skipping...')
         sys.exit(0)
 
-    if args.data == 'tiny-imagenet-200':
+    if args.data == 'cifar10':  # using cifar10 on a tiny-imagenet-200 trained network, resize to 64 and use tiny-imagenet-200 normalization
+        transfer_transform = transforms.Compose([
+            transforms.Resize(64),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2770, 0.2691, 0.2821)),
+        ])
+        test_data = CIFAR10('data/cifar10', download=True, train=False, transform=transfer_transform)
+    elif args.data == 'tiny-imagenet-200':
         transfer_transform = transforms.Compose([
             transforms.Resize(32),
             transforms.ToTensor(),
@@ -55,7 +63,9 @@ def features(args):
             model.downsample.odeblock.t1 = args.t1
 
         t1s = np.array([0, ] + args.t1)  # add 0 at the beginning
-
+    else:
+        t1s = np.linspace(0, 1, 7)  # = 1 input + 6 resblocks' outputs
+        
     features = []
     y_true = []
     with torch.no_grad():
@@ -74,8 +84,7 @@ def features(args):
     with h5py.File(features_file, 'w') as f:
         f['features'] = features
         f['y_true'] = y_true
-        if params.model == 'odenet':
-            f['t1s'] = t1s
+        f['t1s'] = t1s
 
 
 def nfe(args):
@@ -291,24 +300,24 @@ def accuracy(args):
 
 def retrieval(args):
     exp = Experiment.from_dir(args.run, main='model')
-    features_file = exp.path_to('features.h5')
-    results_file = exp.path_to('retrieval.csv')
+
+    features_file = 'features.h5' if args.data is None else 'features-{}.h5'.format(args.data)
+    results_file = 'retrieval.csv' if args.data is None else 'retrieval-{}.csv'.format(args.data)
+
+    features_file = exp.path_to(features_file)
+    results_file = exp.path_to(results_file)
 
     assert os.path.exists(features_file), f"No pre-extracted features found: {features_file}"
 
     all_results = pd.DataFrame()
     # check if results exists and are updated, then load them (and probably skip the computation them later)
-    if os.path.exists(results_file) and os.path.getctime(results_file) >= os.path.getctime(
-            features_file) and not args.force:
+    if os.path.exists(results_file) and os.path.getctime(results_file) >= os.path.getctime(features_file) and not args.force:
         all_results = pd.read_csv(results_file, float_precision='round_trip')
-
-    params = next(exp.params.itertuples())
 
     with h5py.File(features_file, 'r') as f:
         features = f['features'][...]
         y_true = f['y_true'][...]
-        if params.model == 'odenet':
-            t1s = f['t1s'][...]
+        t1s = f['t1s'][...]
 
     features /= np.linalg.norm(features, axis=-2, keepdims=True) + 1e-7
 
@@ -317,26 +326,30 @@ def retrieval(args):
     n_samples = features.shape[-2]  # number of samples, for both models (first dimension might be t1)
     n_queries = queries.shape[-2]  # number of queries, for both models (first dimension might be t1)
 
-    gt = np.broadcast_to(y_true, (n_queries, n_samples)) == y_true[:n_queries].reshape(n_samples,
-                                                                                       -1)  # gt per query in each row
+    gt = np.broadcast_to(y_true, (n_queries, n_samples)) == y_true[:n_queries].reshape(n_samples, -1)  # gt per query in each row
 
-    def score(queries, db, gt):
+    def score(queries, db, gt, k=None):
         scores = queries.dot(db.T)
-        aps = [average_precision_score(gt[i], scores[i]) for i in trange(n_queries)]
+        if k is None:  # average precision
+            aps = [average_precision_score(gt[i], scores[i]) for i in trange(n_queries)]
+        else:  # average precision at k
+            ranking = scores.argsort(axis=1)[:, ::-1][:, :k]  # top k indexes for each query
+            ranked_scores = scores[np.arange(n_queries)[:, np.newaxis], ranking]
+            ranked_gt = gt[np.arange(n_queries)[:, np.newaxis], ranking]
+            aps = [average_precision_score(ranked_gt[i], ranked_scores[i]) for i in trange(n_queries)]  # avg. prec. @ k
+
         return aps
 
-    if params.model == 'odenet':
-        for i, t1 in enumerate(tqdm(t1s)):
-            # TODO check and skip
-            aps_asym = score(queries[i], features[-1], gt)  # t1 = 1 for db
-            aps_sym = score(queries[i], features[i], gt)  # t1 same for queries and db
-            results = pd.DataFrame({'ap_asym': aps_asym, 'ap_sym': aps_sym})
-            results['t1'] = t1
-            all_results = all_results.append(results, ignore_index=True)
-            all_results.to_csv(results_file, index=False)
-    else:  # resnet
-        aps = score(features, features, gt)
-        results = pd.DataFrame({'ap': aps})
+    for i, t1 in enumerate(tqdm(t1s)):
+        # TODO check and skip
+        ap_asym = score(queries[i], features[-1], gt)  # t1 = 1 for db
+        ap_sym = score(queries[i], features[i], gt)  # t1 same for queries and db
+
+        ap10_asym = score(queries[i], features[-1], gt, k=10)
+        ap10_sym = score(queries[i], features[i], gt, k=10)
+
+        results = pd.DataFrame({'ap_asym': ap_asym, 'ap_sym': ap_sym, 'ap10_asym': ap10_asym, 'ap10_sym': ap10_sym})
+        results['t1'] = t1
         all_results = all_results.append(results, ignore_index=True)
         all_results.to_csv(results_file, index=False)
 
@@ -347,12 +360,12 @@ def finetune(args):
 
     features_file = 'features.h5' if args.data is None else 'features-{}.h5'.format(args.data)
     features_file = run.path_to(features_file)
+    results_file = 'finetune.csv' if args.data is None else 'finetune-{}.csv'.format(args.data)
+    results_file = run.path_to(results_file)
 
     assert os.path.exists(features_file), f"Features file not found: {features_file}"
 
     results = pd.DataFrame()
-
-    results_file = run.path_to('finetune.csv')
     if os.path.exists(results_file):
         if os.path.getctime(results_file) >= os.path.getctime(features_file) and not args.force:
             results = pd.read_csv(results_file)
@@ -410,11 +423,12 @@ if __name__ == '__main__':
 
     parser_features = subparsers.add_parser('features')
     parser_features.add_argument('run')
-    parser_features.add_argument('-d', '--data', default=None, choices=('tiny-imagenet-200',))
+    parser_features.add_argument('-d', '--data', default=None, choices=('tiny-imagenet-200', 'cifar10'))
     parser_features.add_argument('--t1', type=float, nargs='+', default=np.arange(0.05, 1.05, .05).tolist())
     parser_features.set_defaults(func=features)
 
     parser_retrieval = subparsers.add_parser('retrieval')
+    parser_retrieval.add_argument('-d', '--data', default=None, choices=('tiny-imagenet-200', 'cifar10'))
     parser_retrieval.add_argument('run')
     parser_retrieval.set_defaults(func=retrieval)
 
