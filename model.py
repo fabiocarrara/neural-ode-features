@@ -73,15 +73,30 @@ class ResNet(nn.Module):
 
         self.features = nn.Sequential(*[ResBlock(n_filters, n_filters) for _ in range(6)])
         self.classifier = FCClassifier(n_filters, out=out, dropout=dropout)
+        self._extract_features = False
 
     def to_features_extractor(self):  # ugly hack
         # remove last classification layer but maintain norm, relu and global avg pooling
         self.classifier.module[-1] = nn.Sequential()
+        self._extract_features = True
+        self._tmp_features = [None, ] * (len(self.features) + 1)  # we keep also the first input
+        
+        def hooks(idx):
+            def __hook(m, i, o):
+                self._tmp_features[idx] = o.data
+            return __hook
+        
+        self.downsample.register_forward_hook(hooks(0))
+        for n, block in enumerate(self.features):
+            block.register_forward_hook(hooks(n + 1))
 
     def forward(self, x):
         x = self.downsample(x)
         x = self.features(x)
-        x = self.classifier(x)
+        if self._extract_features:
+            x = torch.stack([self.classifier(xi) for xi in self._tmp_features])
+        else:
+            x = self.classifier(x)
         return x
 
     def nfe(self, reset=False):
