@@ -190,7 +190,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ODENet/ResNet training')
-    parser.add_argument('--dataset', type=str, choices=('mnist', 'cifar10', 'tiny-imagenet-200'), default='mnist')
+    parser.add_argument('--dataset', type=str, choices=('mnist', 'cifar10', 'cifar100', 'tiny-imagenet-200'), default='mnist')
     parser.add_argument('--augmentation', type=str, choices=('none', 'crop+flip+norm', 'crop+jitter+flip+norm'),
                         default='none')
     parser.add_argument('-m', '--model', type=str, choices=('resnet', 'odenet'), default='odenet')

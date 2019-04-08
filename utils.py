@@ -122,6 +122,41 @@ def load_dataset(args):
         test_data = datasets.CIFAR10('data/cifar10', download=True, train=False, transform=test_transform)
         in_ch = 3
         out = 10
+    
+    elif args.dataset == 'cifar100':
+        if args.augmentation == 'none':
+            train_transform = test_transform = transforms.ToTensor()
+        elif args.augmentation == 'crop+flip+norm':
+            train_transform = transforms.Compose([
+                transforms.RandomCrop(32, padding=4),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)),
+            ])
+
+            test_transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)),
+            ])
+
+        elif args.augmentation == 'crop+jitter+flip+norm':
+            train_transform = transforms.Compose([
+                transforms.RandomCrop(32, padding=4),
+                transforms.ColorJitter(hue=.05, saturation=.05),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)),
+            ])
+
+            test_transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)),
+            ])
+
+        train_data = datasets.CIFAR100('data/cifar100', download=True, train=True, transform=train_transform)
+        test_data = datasets.CIFAR100('data/cifar100', download=True, train=False, transform=test_transform)
+        in_ch = 3
+        out = 100
 
     elif args.dataset == 'tiny-imagenet-200':
         if args.augmentation == 'none':
@@ -175,6 +210,17 @@ def load_test_data(exp):
             test_transform = transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            ])
+        test_data = datasets.CIFAR10('data/cifar10', download=True, train=False, transform=test_transform)
+
+    elif params.dataset == 'cifar100':
+        if params.augmentation == 'none':
+            test_transform = transforms.ToTensor()
+
+        elif params.augmentation in ('crop+flip+norm', 'crop+jitter+flip+norm'):
+            test_transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)),
             ])
         test_data = datasets.CIFAR10('data/cifar10', download=True, train=False, transform=test_transform)
 
