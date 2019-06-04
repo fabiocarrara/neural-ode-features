@@ -121,11 +121,15 @@ def main(args):
     train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
     test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=False)
 
+    common_model_params = dict(out=out,
+                               downsample=args.downsample,
+                               n_filters=args.filters,
+                               dropout=args.dropout,
+                               norm=args.norm)
     if args.model == 'odenet':
-        model = ODENet(in_ch, out=out, n_filters=args.filters, downsample=args.downsample, method=args.method, tol=args.tol, adjoint=args.adjoint,
-                       dropout=args.dropout)
+        model = ODENet(in_ch, method=args.method, tol=args.tol, adjoint=args.adjoint, **common_model_params)
     else:
-        model = ResNet(in_ch, out=out, n_filters=args.filters, downsample=args.downsample, dropout=args.dropout)
+        model = ResNet(in_ch, **common_model_params)
 
     model = model.to(args.device)
     if args.optim == 'sgd':
@@ -194,8 +198,8 @@ if __name__ == '__main__':
     parser.add_argument('--augmentation', type=str, choices=('none', 'crop+flip+norm', 'crop+jitter+flip+norm'),
                         default='none')
     parser.add_argument('-m', '--model', type=str, choices=('resnet', 'odenet'), default='odenet')
-    parser.add_argument('-d', '--downsample', type=str, choices=('ode2', 'ode', 'residual', 'convolution', 'minimal', 'one-shot'),
-                        default='residual')
+    parser.add_argument('-d', '--downsample', type=str, choices=('ode2', 'ode', 'residual', 'convolution', 'minimal', 'one-shot'), default='residual')
+    parser.add_argument('-n', '--norm', type=str, choices=('group', 'batch'), default='group')
     parser.add_argument('-f', '--filters', type=int, default=64)
     parser.add_argument('--dropout', type=float, default=0)
 

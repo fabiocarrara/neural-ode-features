@@ -4,24 +4,25 @@ from torchdiffeq import odeint_adjoint, odeint
 
 
 class ODENet(nn.Module):
-    def __init__(self, in_ch, out=10, n_filters=64, downsample='residual', method='dopri5', tol=1e-3, adjoint=False, t1=1, dropout=0):
+    def __init__(self, in_ch, out=10, n_filters=64, downsample='residual', method='dopri5', tol=1e-3, adjoint=False, t1=1, dropout=0, norm='group'):
         super(ODENet, self).__init__()
-
+        
+        common = dict(out_ch=n_filters, norm=norm)
         if downsample == 'residual':
-            self.downsample = ResDownsample(in_ch, out_ch=n_filters)
+            self.downsample = ResDownsample(in_ch, **common)
         elif downsample == 'convolution':
-            self.downsample = ConvDownsample(in_ch, out_ch=n_filters)
+            self.downsample = ConvDownsample(in_ch, **common)
         elif downsample == 'minimal':
-            self.downsample = MinimalConvDownsample(in_ch, out_ch=n_filters)
+            self.downsample = MinimalConvDownsample(in_ch, **common)
         elif downsample == 'one-shot':
-            self.downsample = OneShotDownsample(in_ch, out_ch=n_filters)
+            self.downsample = OneShotDownsample(in_ch, **common)
         elif downsample == 'ode':
-            self.downsample = ODEDownsample(in_ch, out_ch=n_filters, adjoint=adjoint, t1=t1, tol=tol, method=method)
+            self.downsample = ODEDownsample(in_ch, adjoint=adjoint, t1=t1, tol=tol, method=method, **common)
         elif downsample == 'ode2':
-            self.downsample = ODEDownsample2(in_ch, out_ch=n_filters, adjoint=adjoint, t1=t1, tol=tol, method=method)
+            self.downsample = ODEDownsample2(in_ch, adjoint=adjoint, t1=t1, tol=tol, method=method, **common)
 
-        self.odeblock = ODEBlock(n_filters=n_filters, tol=tol, adjoint=adjoint, t1=t1, method=method)
-        self.classifier = FCClassifier(in_ch=n_filters, out=out, dropout=dropout)
+        self.odeblock = ODEBlock(n_filters=n_filters, tol=tol, adjoint=adjoint, t1=t1, method=method, norm=norm)
+        self.classifier = FCClassifier(in_ch=n_filters, out=out, dropout=dropout, norm=norm)
 
     def forward(self, x):
         out = []
@@ -59,20 +60,21 @@ class ODENet(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, in_ch, out=10, n_filters=64, downsample='residual', dropout=0):
+    def __init__(self, in_ch, out=10, n_filters=64, downsample='residual', dropout=0, norm='group'):
         super(ResNet, self).__init__()
 
+        common = dict(out_ch=n_filters, norm=norm)
         if downsample == 'residual':
-            self.downsample = ResDownsample(in_ch, out_ch=n_filters)
+            self.downsample = ResDownsample(in_ch, **common)
         elif downsample == 'convolution':
-            self.downsample = ConvDownsample(in_ch, out_ch=n_filters)
+            self.downsample = ConvDownsample(in_ch, **common)
         elif downsample == 'minimal':
-            self.downsample = MinimalConvDownsample(in_ch, out_ch=n_filters)
+            self.downsample = MinimalConvDownsample(in_ch, **common)
         elif downsample == 'one-shot':
-            self.downsample = OneShotDownsample(in_ch, out_ch=n_filters)
+            self.downsample = OneShotDownsample(in_ch, **common)
 
         self.features = nn.Sequential(*[ResBlock(n_filters, n_filters) for _ in range(6)])
-        self.classifier = FCClassifier(n_filters, out=out, dropout=dropout)
+        self.classifier = FCClassifier(n_filters, out=out, dropout=dropout, norm=norm)
         self._extract_features = False
 
     def to_features_extractor(self):  # ugly hack
@@ -110,7 +112,7 @@ class ResNet(nn.Module):
 
 class OneShotDownsample(nn.Module):
 
-    def __init__(self, in_ch, out_ch=64):
+    def __init__(self, in_ch, out_ch=64, **kwargs):
         super(OneShotDownsample, self).__init__()
         self.module = nn.Conv2d(in_ch, out_ch, 4, 2, 1)
 
@@ -120,8 +122,9 @@ class OneShotDownsample(nn.Module):
 
 class MinimalConvDownsample(nn.Module):
 
-    def __init__(self, in_ch, out_ch=64):
+    def __init__(self, in_ch, out_ch=64, norm='group'):
         super(MinimalConvDownsample, self).__init__()
+        norm = normalization(norm)
         self.module = nn.Sequential(
             nn.Conv2d(in_ch, 24, 3, 1),
             norm(24),
@@ -138,8 +141,9 @@ class MinimalConvDownsample(nn.Module):
 
 class ConvDownsample(nn.Module):
 
-    def __init__(self, in_ch, out_ch=64):
+    def __init__(self, in_ch, out_ch=64, norm='group'):
         super(ConvDownsample, self).__init__()
+        norm = normalization(norm)
         self.module = nn.Sequential(
             nn.Conv2d(in_ch, 64, 3, 1),
             norm(64),
@@ -156,12 +160,12 @@ class ConvDownsample(nn.Module):
 
 class ResDownsample(nn.Module):
 
-    def __init__(self, in_ch, out_ch=64):
+    def __init__(self, in_ch, out_ch=64, norm='group'):
         super(ResDownsample, self).__init__()
         self.module = nn.Sequential(
             nn.Conv2d(in_ch, 64, 3, 1),
-            ResBlock(64, 64, stride=2, downsample=conv1x1(64, 64, 2)),
-            ResBlock(64, out_ch, stride=2, downsample=conv1x1(64, out_ch, 2)),
+            ResBlock(64, 64, stride=2, downsample=conv1x1(64, 64, 2), norm=norm),
+            ResBlock(64, out_ch, stride=2, downsample=conv1x1(64, out_ch, 2), norm=norm),
         )
 
     def forward(self, *input):
@@ -170,10 +174,10 @@ class ResDownsample(nn.Module):
 
 class ODEDownsample(nn.Module):
 
-    def __init__(self, in_ch, out_ch=64, method='dopri5', adjoint=False, t1=1, tol=1e-3):
+    def __init__(self, in_ch, out_ch=64, method='dopri5', adjoint=False, t1=1, tol=1e-3, norm='group'):
         super(ODEDownsample, self).__init__()
         self.conv1 = nn.Conv2d(in_ch, out_ch, 4, 2, 1)  # first downsample
-        self.odeblock = ODEBlock(n_filters=out_ch, adjoint=adjoint, t1=t1, tol=tol, method=method)
+        self.odeblock = ODEBlock(n_filters=out_ch, adjoint=adjoint, t1=t1, tol=tol, method=method, norm=norm)
         self.maxpool = nn.MaxPool2d(4, 2, 1)
 
     def forward(self, x):
@@ -188,11 +192,11 @@ class ODEDownsample(nn.Module):
 
 class ODEDownsample2(nn.Module):
 
-    def __init__(self, in_ch, out_ch=64, method='dopri5', adjoint=False, t1=1, tol=1e-3):
+    def __init__(self, in_ch, out_ch=64, method='dopri5', adjoint=False, t1=1, tol=1e-3, norm='group'):
         super(ODEDownsample2, self).__init__()
         self.conv1 = nn.Conv2d(in_ch, out_ch, 4, 2, 1)  # first downsample
-        self.odeblock = ODEBlock(n_filters=out_ch, adjoint=adjoint, t1=t1, tol=tol, method=method)
-        self.norm = nn.Sequential(norm(out_ch), nn.ReLU(inplace=True))
+        self.odeblock = ODEBlock(n_filters=out_ch, adjoint=adjoint, t1=t1, tol=tol, method=method, norm=norm)
+        self.norm = nn.Sequential(normalization(norm)(out_ch), nn.ReLU(inplace=True))
         self.conv2 = nn.Conv2d(out_ch, out_ch, 4, 2, 1)  # downsample for successive ode
         
         self.apply_conv = False
@@ -220,9 +224,9 @@ class ODEDownsample2(nn.Module):
 
 class FCClassifier(nn.Module):
 
-    def __init__(self, in_ch=64, out=10, dropout=0):
+    def __init__(self, in_ch=64, out=10, dropout=0, norm='group'):
         super(FCClassifier, self).__init__()
-
+        norm = normalization(norm)
         layers = [
                      norm(in_ch),
                      nn.ReLU(inplace=True),
@@ -255,15 +259,28 @@ def conv1x1(in_planes, out_planes, stride=1):
     return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
 
-def norm(dim):
-    return nn.GroupNorm(min(32, dim), dim)
+def normalization(norm='group'):
+
+    def _group_norm(dim):
+        return nn.GroupNorm(min(32, dim), dim)
+        
+    def _batch_norm(dim):
+        return nn.BatchNorm2d(dim, track_running_stats=False)
+
+    if norm == 'group':
+        return _group_norm
+    elif norm == 'batch':
+        return _batch_norm
+        
+    raise NotImplementedError('Normalization layer not implemented: {}'.format(norm))
 
 
 class ResBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, norm='group'):
         super(ResBlock, self).__init__()
+        norm = normalization(norm)
         self.norm1 = norm(inplanes)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
@@ -302,8 +319,9 @@ class ConcatConv2d(nn.Module):
 
 class ODEfunc(nn.Module):
 
-    def __init__(self, dim):
+    def __init__(self, dim, norm='group'):
         super(ODEfunc, self).__init__()
+        norm = normalization(norm)
         self.norm1 = norm(dim)
         self.relu = nn.ReLU(inplace=True)
         self.conv1 = ConcatConv2d(dim, dim, kernel_size=3, stride=1, padding=1)
@@ -326,9 +344,9 @@ class ODEfunc(nn.Module):
 
 class ODEBlock(nn.Module):
 
-    def __init__(self, n_filters=64, tol=1e-3, method='dopri5', adjoint=False, t1=1):
+    def __init__(self, n_filters=64, tol=1e-3, method='dopri5', adjoint=False, t1=1, norm='group'):
         super(ODEBlock, self).__init__()
-        self.odefunc = ODEfunc(n_filters)
+        self.odefunc = ODEfunc(n_filters, norm=norm)
         self.t1 = t1
         self.tol = tol
         self.method = method
