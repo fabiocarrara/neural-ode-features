@@ -62,29 +62,35 @@ def features(args):
         model.odeblock.t1 = args.t1
         if 'ode' in params.downsample:
             model.downsample.odeblock.t1 = args.t1
-
-        t1s = np.array([0, ] + args.t1)  # add 0 at the beginning
     else:
-        t1s = np.linspace(0, 1, 7)  # = 1 input + 6 resblocks' outputs
-        
+        args.t1 = np.linspace(0, 1, 7)  # = 1 input + 6 resblocks' outputs
+        args.tol = [0]
+
+    tols = np.array(args.tol)
+    t1s = np.array(args.t1)
     features = []
     y_true = []
-    with torch.no_grad():
-        for x, y in tqdm(test_loader):
-            x = x.to(args.device)
-            y_true.append(y.numpy())
 
-            f = model(x)
-            f = f.cpu().numpy()
+    with torch.no_grad():
+        y_true = [y.numpy() for _, y in tqdm(test_loader)]
+        y_true = np.concatenate(y_true)
+
+        for tol in tqdm(tols):
+            if params.model == "odenet":
+                model.odeblock.tol = tol
+
+            f = [model(x.to(args.device)).cpu().numpy()
+                 for x, _ in tqdm(test_loader)]
+            f = np.concatenate(f, -2)  # concat along batch dimension
 
             features.append(f)
 
-    features = np.concatenate(features, -2)  # concat along batch dimension
-    y_true = np.concatenate(y_true)
+        features = np.stack(features)
 
     with h5py.File(features_file, 'w') as f:
         f['features'] = features
         f['y_true'] = y_true
+        f['tols'] = tols
         f['t1s'] = t1s
 
 
@@ -97,7 +103,7 @@ def nfe(args):
     results = pd.DataFrame()
     # check if results exists and are updated, then skip the computation
     if os.path.exists(results_file) and os.path.getctime(results_file) >= os.path.getctime(best_ckpt_file) and not args.force:
-        results = pd.read_csv(results_file, float_precision='round_trip')
+        results = pd.read_csv(results_file, float_precision='round_trip').round({'t1': 2})
 
     test_data = load_test_data(run)
     test_loader = DataLoader(test_data, batch_size=1, shuffle=False)
@@ -123,7 +129,7 @@ def nfe(args):
 
     progress = tqdm(itertools.product(args.tol, args.t1))
     for tol, t1 in progress:
-        if 't1' in results.columns and 'tol' in results.columns and ((results.t1 == t1) & (results.test_tol == tol)).any():
+        if 't1' in results.columns and 'tol' in results.columns and ((results.t1 == t1) & (results.tol == tol)).any():
             print(f'Skipping tol={tol} t1={t1} ...')
             continue
 
@@ -414,28 +420,32 @@ if __name__ == '__main__':
     parser.set_defaults(cuda=True, force=False)
     subparsers = parser.add_subparsers()
 
+    default_tol = (0.001, 0.01, 0.1, 1, 10, 100)
+    default_t1 = tuple(np.linspace(0, 1, 21).round(2))
+
     parser_tradeoff = subparsers.add_parser('tradeoff')
     parser_tradeoff.add_argument('run')
-    parser_tradeoff.add_argument('--tol', type=float, nargs='+', default=[0.001, 0.01, 0.1, 1, 10, 100])
-    parser_tradeoff.add_argument('--t1', type=float, nargs='+', default=np.arange(0.05, 1.05, .05).tolist())
+    parser_tradeoff.add_argument('--tol', type=float, nargs='+', default=default_tol)
+    parser_tradeoff.add_argument('--t1', type=float, nargs='+', default=default_t1)
     parser_tradeoff.set_defaults(func=tradeoff)
 
     parser_accuracy = subparsers.add_parser('accuracy')
     parser_accuracy.add_argument('run')
-    parser_accuracy.add_argument('-t', '--tol', type=float, nargs='+', default=[0.001, 0.01, 0.1, 1, 10, 100])
+    parser_accuracy.add_argument('-t', '--tol', type=float, nargs='+', default=default_tol)
     parser_accuracy.set_defaults(func=accuracy)
 
     parser_nfe = subparsers.add_parser('nfe')
     parser_nfe.add_argument('run')
-    parser_nfe.add_argument('--tol', type=float, nargs='+', default=[0.001, 0.01, 0.1, 1, 10, 100])
-    parser_nfe.add_argument('--t1', type=float, nargs='+', default=np.arange(0, 1.05, .05).tolist())
+    parser_nfe.add_argument('--tol', type=float, nargs='+', default=default_tol)
+    parser_nfe.add_argument('--t1', type=float, nargs='+', default=default_t1)
     parser_nfe.set_defaults(func=nfe)
 
     parser_features = subparsers.add_parser('features')
     parser_features.add_argument('run')
-    parser_features.add_argument('-d', '--data', default=None, choices=('tiny-imagenet-200', 'cifar10'))
-    parser_features.add_argument('--t1', type=float, nargs='+', default=np.arange(0.05, 1.05, .05).tolist())
     parser_features.set_defaults(func=features)
+    parser_features.add_argument('--t1', type=float, nargs='+', default=default_t1)
+    parser_features.add_argument('--tol', type=float, nargs='+', default=default_tol)
+    parser_features.add_argument('-d', '--data', default=None, choices=('tiny-imagenet-200', 'cifar10'))
 
     parser_retrieval = subparsers.add_parser('retrieval')
     parser_retrieval.add_argument('-d', '--data', default=None, choices=('tiny-imagenet-200', 'cifar10'))

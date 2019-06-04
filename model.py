@@ -364,10 +364,17 @@ class ODEBlock(nn.Module):
                 self.integration_time = None
             else:
                 self.integration_time = torch.tensor([0, value], dtype=torch.float32)
-        elif isinstance(value, (list, tuple)):
-            self.integration_time = torch.tensor([0, ] + list(value), dtype=torch.float32)
-        elif isinstance(value, torch.Tensor):
-            self.integration_time = torch.tensor([0, ] + value.tolist(), dtype=torch.float32)
+
+        elif isinstance(value, (list, tuple, torch.Tensor)):
+            if isinstance(value, tuple):
+                value = list(value)
+            if isinstance(value, torch.Tensor):
+                value = value.tolist()
+            if value[0] != 0:
+                print(value[0])
+                value = [0, ] + value
+
+            self.integration_time = torch.tensor(value, dtype=torch.float32)
         else:
             raise ValueError('Argument must be a scalar, a list, or a tensor')
 
