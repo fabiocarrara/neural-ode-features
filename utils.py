@@ -10,6 +10,13 @@ from torchvision.transforms import transforms
 
 from model import ODENet, ResNet
 
+PREPROC = {
+    'mnist': (0, 1),
+    'cifar10': ((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    'cifar100': ((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)),
+    'tiny-imagenet-200': ((0.4802, 0.4481, 0.3975), (0.2770, 0.2691, 0.2821))
+}
+
 
 class TinyImageNet200(Dataset):
     def __init__(self, root, download=True, transform=None, target_transform=None, split='train'):
@@ -96,12 +103,12 @@ def load_dataset(args):
                 transforms.RandomCrop(32, padding=4),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                transforms.Normalize(*PREPROC['cifar10']),
             ])
 
             test_transform = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                transforms.Normalize(*PREPROC['cifar10']),
             ])
 
         elif args.augmentation == 'crop+jitter+flip+norm':
@@ -110,19 +117,19 @@ def load_dataset(args):
                 transforms.ColorJitter(hue=.05, saturation=.05),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                transforms.Normalize(*PREPROC['cifar10']),
             ])
 
             test_transform = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                transforms.Normalize(*PREPROC['cifar10']),
             ])
 
         train_data = datasets.CIFAR10('data/cifar10', download=True, train=True, transform=train_transform)
         test_data = datasets.CIFAR10('data/cifar10', download=True, train=False, transform=test_transform)
         in_ch = 3
         out = 10
-    
+
     elif args.dataset == 'cifar100':
         if args.augmentation == 'none':
             train_transform = test_transform = transforms.ToTensor()
@@ -131,12 +138,12 @@ def load_dataset(args):
                 transforms.RandomCrop(32, padding=4),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Normalize((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)),
+                transforms.Normalize(*PREPROC['cifar100']),
             ])
 
             test_transform = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)),
+                transforms.Normalize(*PREPROC['cifar100']),
             ])
 
         elif args.augmentation == 'crop+jitter+flip+norm':
@@ -145,12 +152,12 @@ def load_dataset(args):
                 transforms.ColorJitter(hue=.05, saturation=.05),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Normalize((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)),
+                transforms.Normalize(*PREPROC['cifar100']),
             ])
 
             test_transform = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)),
+                transforms.Normalize(*PREPROC['cifar100']),
             ])
 
         train_data = datasets.CIFAR100('data/cifar100', download=True, train=True, transform=train_transform)
@@ -166,12 +173,12 @@ def load_dataset(args):
                 transforms.RandomCrop(64, padding=8),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2770, 0.2691, 0.2821)),
+                transforms.Normalize(*PREPROC['tiny-imagenet-200']),
             ])
 
             test_transform = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2770, 0.2691, 0.2821)),
+                transforms.Normalize(*PREPROC['tiny-imagenet-200']),
             ])
 
         elif args.augmentation == 'crop+jitter+flip+norm':
@@ -180,12 +187,12 @@ def load_dataset(args):
                 transforms.ColorJitter(hue=.05, saturation=.05),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2770, 0.2691, 0.2821)),
+                transforms.Normalize(*PREPROC['tiny-imagenet-200']),
             ])
 
             test_transform = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2770, 0.2691, 0.2821)),
+                transforms.Normalize(*PREPROC['tiny-imagenet-200']),
             ])
 
         train_data = TinyImageNet200('data/tiny-imagenet-200', download=True, split='train', transform=train_transform)
@@ -209,7 +216,7 @@ def load_test_data(exp):
         elif params.augmentation in ('crop+flip+norm', 'crop+jitter+flip+norm'):
             test_transform = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                transforms.Normalize(*PREPROC['cifar10']),
             ])
         test_data = datasets.CIFAR10('data/cifar10', download=True, train=False, transform=test_transform)
 
@@ -220,7 +227,7 @@ def load_test_data(exp):
         elif params.augmentation in ('crop+flip+norm', 'crop+jitter+flip+norm'):
             test_transform = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)),
+                transforms.Normalize(*PREPROC['cifar100']),
             ])
         test_data = datasets.CIFAR10('data/cifar10', download=True, train=False, transform=test_transform)
 
@@ -231,10 +238,9 @@ def load_test_data(exp):
         elif params.augmentation in ('crop+flip+norm', 'crop+jitter+flip+norm'):
             test_transform = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2770, 0.2691, 0.2821)),
+                transforms.Normalize(*PREPROC['tiny-imagenet-200']),
             ])
         test_data = TinyImageNet200('data/tiny-imagenet-200', download=True, split='val', transform=test_transform)
-
 
     return test_data
 
@@ -281,10 +287,7 @@ if __name__ == '__main__':
     print(mu.tolist())
 
     for x, _ in tqdm(d):
-        std += ((x - mu.view(-1,1,1))**2).sum(0).sum(-1).sum(-1)
+        std += ((x - mu.view(-1, 1, 1)) ** 2).sum(0).sum(-1).sum(-1)
 
     std = torch.sqrt(std / (len(d.dataset) * (64 * 64)))
     print(std.tolist())
-
-
-
