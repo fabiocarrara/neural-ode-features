@@ -2,6 +2,10 @@ import argparse
 import os
 
 import matplotlib
+import torch
+from matplotlib import patheffects
+from torchvision import transforms
+from torchvision.utils import make_grid
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -10,12 +14,13 @@ from matplotlib.legend_handler import HandlerLine2D
 
 import seaborn as sns
 
-sns.set(style='whitegrid', context='notebook')
+sns.set(style='whitegrid', context='paper')
 
+import numpy as np
 import pandas as pd
 
 from tqdm import tqdm
-from utils import load_model
+from utils import load_model, load_test_data
 from expman import Experiment
 
 
@@ -75,7 +80,7 @@ def tradeoff(args):
     ax.get_xaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
     ax.get_yaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
     # ax2.get_xaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
-    ax2.set_yticks(pd.np.linspace(ax2.get_yticks()[0], ax2.get_yticks()[-1], len(ax.get_yticks())))
+    ax2.set_yticks(np.linspace(ax2.get_yticks()[0], ax2.get_yticks()[-1], len(ax.get_yticks())))
 
     ax.grid(b=True, which='minor', linewidth=0.5, linestyle='--')
     ax2.grid(False)
@@ -188,10 +193,95 @@ def best(args):
 
 def nfe(args):
     assert Experiment.is_exp_dir(args.run), "Not a run dir: args.run"
-    runs = Experiment.from_dir(args.run, main='model')
-    nfe = pd.read_csv(runs.path_to('nfe.csv'), index_col=0)
-    sns.boxplot(x='y_true', y='nfe', data=nfe)
+    exp = Experiment.from_dir(args.run, main='model')
+    nfe = pd.read_csv(exp.path_to('nfe.csv.gz'))  #, index_col=0)
+    nfe = nfe[(nfe.t1 == 1) & (nfe.tol == 0.001)].reset_index(drop=True)
+    nfe.nfe = (nfe.nfe - 2) / 6  # show n. steps instead of NFE
+
+    nfe = nfe[nfe.y_true == nfe.y_pred]
+
+    dataset = exp.params.dataset.iloc[0]
+    if dataset == 'mnist':
+        labels = [str(i) for i in range(10)]
+    elif dataset == 'cifar10':
+        labels = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+
+    nfe.y_true = nfe.y_true.apply(lambda x: labels[x])
+    nfe = nfe.sort_values('y_true')
+    # g = sns.FacetGrid(nfe, col='y_true')
+    # g.map(sns.kdeplot, 'nfe')
+    # ax = sns.boxplot(y='y_true', x='nfe', data=nfe, orient='h')
+    # ax.set_xlabel('solver steps')
+    # ax.set_ylabel('image class')
+    
+    print('{:.2g} \pm {:.2g}'.format(nfe.nfe.mean(), nfe.nfe.std()))
+
+    min, max = nfe.nfe.min(), nfe.nfe.max()
+    values = np.arange(min, max + 1)
+    plt.xticks(values)
+    bins = values - .5
+    plt.xlim(bins[0], bins[-1])
+    counts, _, _ = plt.hist(nfe.nfe, bins=bins)
+    plt.grid(b=False, axis='x')
+    plt.grid(b=True, which='minor', linewidth=0.5, linestyle='--', axis='y')
+    plt.gca().get_yaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+
+    for v, c in zip(values, counts):
+        plt.text(v, c, f'{c:g}', ha='center', va='bottom')
+
     plt.savefig(args.output, bbox_inches="tight")
+    plt.close()
+
+    """ Images """
+    sns.set_style('white')
+
+    n = 5
+    pad = 20
+    side = 28 if dataset == 'mnist' else 32
+    side += 2  # make_grid padding
+    groups = nfe.groupby('y_true')
+
+    test_data = load_test_data(exp)
+    test_data.transform = transforms.ToTensor()
+
+    largest_nfe = groups.nfe.nlargest(n)
+    high_nfe_idxs = largest_nfe.index.get_level_values(1)
+    high_nfe_images = torch.stack([test_data[i][0] for i in high_nfe_idxs])
+    high_nfe_grid = make_grid(high_nfe_images, nrow=n)
+
+    smallest_nfe = groups.nfe.nsmallest(n).reset_index().sort_values(['y_true', 'nfe'], ascending=[True, False])
+    low_nfe_idxs = smallest_nfe.level_1  # nsmallest in reverse order
+    low_nfe_images = torch.stack([test_data[i][0] for i in low_nfe_idxs])
+    low_nfe_grid = make_grid(low_nfe_images, nrow=n)
+    smallest_nfe = smallest_nfe.nfe
+
+    grid_h = low_nfe_grid.shape[1]
+    img_pad = torch.zeros((3, grid_h, pad))
+    grid = torch.cat((high_nfe_grid, img_pad, low_nfe_grid), 2)
+
+    plt.imshow(np.transpose(grid.numpy(), (1, 2, 0)))  # , interpolation='nearest')
+    for i, (l, s) in enumerate(zip(largest_nfe, smallest_nfe)):
+        y, x = (i // n), (i % n)
+        y, x = (np.array((y, x)) + (0.8, 0.75)) * side
+        text = plt.text(x, y, str(int(l)), fontsize=5, ha='left', va='top', color='white')
+        text.set_path_effects([patheffects.Stroke(linewidth=1, foreground='black'), patheffects.Normal()])
+
+        disp = side * n + pad + 6
+        text = plt.text(x + disp, y, str(int(s)), fontsize=5, ha='left', va='top', color='white')
+        text.set_path_effects([patheffects.Stroke(linewidth=1, foreground='black'), patheffects.Normal()])
+
+    ax = plt.gca()
+    h, _ = ax.get_ylim()
+    ticks = (np.arange(10) / 10 + 1 / (2 * 10)) * h
+    plt.yticks(ticks, labels)
+
+    plt.xticks([])
+    h, htxt = -0.03, -0.08
+    ax.annotate('', xy=(0, h), xycoords='axes fraction', xytext=(1, h), arrowprops=dict(arrowstyle="<->", color='k'))
+    ax.annotate('high NFE', xy=(0, htxt), xycoords='axes fraction', xytext=(0, htxt))
+    ax.annotate('low NFE', xy=(1, htxt), xycoords='axes fraction', xytext=(0.87, htxt))
+
+    plt.savefig(args.output2, bbox_inches="tight")
 
 
 def nparams(args):
@@ -291,14 +381,55 @@ def retrieval(args):
     y_lim = (0, perc_scale) if args.data is None else (.24 * perc_scale, .68 * perc_scale)
     plt.ylim(*y_lim)
 
-    major_ticks = pd.np.arange(0, 1.2, 0.2)
-    minor_ticks = pd.np.arange(0, 1.05, 0.05)
+    major_ticks = np.arange(0, 1.2, 0.2)
+    minor_ticks = np.arange(0, 1.05, 0.05)
     ax.set_xticks(major_ticks)
     ax.set_xticks(minor_ticks, minor=True)
     ax.get_yaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
     ax.grid(b=True, which='minor', linewidth=0.5, linestyle='--')
 
     plt.legend(handles=h, labels=l, loc='lower center', ncol=3, prop={'size': 8})
+    plt.savefig(args.output, bbox_inches="tight")
+
+
+def transfer(args):
+    exps = Experiment.gather(args.run, main='model')
+    exps = Experiment.filter(args.filter, exps)
+
+    results_file = 'finetune.csv' if args.data is None else 'finetune-{}.csv'.format(args.data)
+    results = Experiment.collect_all(exps, results_file)
+
+    perc_scale = 100 if args.percentage else 1
+
+    # filter out aggregations for now
+    results = results[results.t1 >= 0]
+    results.cv_accuracy *= perc_scale
+
+    results['name'] = None
+    results.loc[(results.downsample == 'residual') & (results.model == 'resnet'), 'name'] = 'Res-Net'
+    results.loc[(results.downsample == 'residual') & (results.model == 'odenet'), 'name'] = 'Res-ODE'
+    results.loc[(results.downsample == 'one-shot') & (results.model == 'odenet'), 'name'] = 'ODE-Only'
+    results['name'] = pd.Categorical(results['name'], ['Res-Net', 'Res-ODE', 'ODE-Only'])
+    results = results.sort_values('name')
+
+    ax = sns.lineplot(x='t1', y='cv_accuracy', hue='name', style='name', markers=('D', 'o', 'o'), dashes=False, data=results)
+    h, l = ax.get_legend_handles_labels()
+    h, l = h[1:], l[1:]
+
+    ax.lines[0].set_linestyle('--')
+    h[0].set_linestyle('--')
+    ax.lines[0].set_color('k')
+    h[0].set_color('k')
+
+    for hi in h:
+        hi.set_markeredgecolor('w')
+
+    plt.xlabel('t')
+    plt.ylabel('5-fold Accuracy (%)')
+    plt.xlim(0, 1)
+    # ax.set_ylim(bottom=0)
+
+    plt.legend(handles=h, labels=l, loc='best', ncol=1)  # , prop={'size': 8})
     plt.savefig(args.output, bbox_inches="tight")
 
 
@@ -336,6 +467,7 @@ if __name__ == '__main__':
     parser_nfe = subparsers.add_parser('nfe')
     parser_nfe.add_argument('run', default='runs/')
     parser_nfe.add_argument('-o', '--output', default='nfe.pdf')
+    parser_nfe.add_argument('-o2', '--output2', default='nfe2.pdf')
     parser_nfe.set_defaults(func=nfe)
 
     parser_best = subparsers.add_parser('best')
@@ -360,6 +492,13 @@ if __name__ == '__main__':
     parser_retrieval.add_argument('-m', '--metric', default='ap', choices=('ap', 'ap10'))
     parser_retrieval.add_argument('-o', '--output', default='retrieval.pdf')
     parser_retrieval.set_defaults(func=retrieval)
+
+    parser_transfer = subparsers.add_parser('transfer')
+    parser_transfer.add_argument('run', default='runs/')
+    parser_transfer.add_argument('-p', '--percentage', default=False, action='store_true')
+    parser_transfer.add_argument('-d', '--data', default=None, choices=('tiny-imagenet-200', 'cifar10'))
+    parser_transfer.add_argument('-o', '--output', default='transfer.pdf')
+    parser_transfer.set_defaults(func=transfer)
 
     args = parser.parse_args()
     args.func(args)
