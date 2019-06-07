@@ -48,14 +48,15 @@ def main(args):
     os.makedirs(sub_exp_root, exist_ok=True)
 
     sub_exp = Experiment(args, root=sub_exp_root, ignore=('run',))
+    print(sub_exp)
     results_file = sub_exp.path_to('results.csv')
-    results = pd.read_csv(results_file) if os.path.exists(results_file) else None
+    results = pd.read_csv(results_file) if os.path.exists(results_file) else pd.DataFrame()
 
     # perform attack
     progress = tqdm(data)
     for i, (image, label) in enumerate(progress):
-        if results is not None and i in results.sample_id.values:
-            continue
+        if not results.empty and i in results.sample_id.values:
+           continue
         
         start = time.time()
         adversarial = attack(image, label, unpack=False, binary_search=False, epsilon=args.epsilon)
@@ -69,7 +70,7 @@ def main(args):
             original_class    = adversarial.original_class,
         ), index=[0])
         
-        results = result if results is None else results.append(result, ignore_index=True)
+        results = results.append(result, ignore_index=True)
         results.to_csv(results_file, index=False)
         
         success = (results.adversarial_class != results.original_class)
