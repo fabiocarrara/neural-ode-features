@@ -45,12 +45,15 @@ class ODENet(nn.Module):
         out = torch.cat(out)
         return out
 
-    def to_features_extractor(self):  # ugly hack
+    def to_features_extractor(self, keep_pool=True):  # ugly hack
         if isinstance(self.downsample, (ODEDownsample, ODEDownsample2)):
             self.downsample.odeblock.return_last_only = False
         self.odeblock.return_last_only = False  # returns dynamic @ multiple timestamps
-        # remove last classification layer but maintain norm, relu and global avg pooling
-        self.classifier.module[-1] = nn.Sequential()
+        if keep_pool:
+            # remove last classification layer but maintain norm, relu and global avg pooling
+            self.classifier.module[-1] = nn.Sequential()
+        else:
+            self.classifier = nn.Sequential(*list(self.classifier.module.children())[:2])
 
     def nfe(self, reset=False):
         nfe = self.odeblock.nfe
@@ -77,9 +80,12 @@ class ResNet(nn.Module):
         self.classifier = FCClassifier(n_filters, out=out, dropout=dropout, norm=norm)
         self._extract_features = False
 
-    def to_features_extractor(self):  # ugly hack
-        # remove last classification layer but maintain norm, relu and global avg pooling
-        self.classifier.module[-1] = nn.Sequential()
+    def to_features_extractor(self, keep_pool=True):  # ugly hack
+        if keep_pool:
+            # remove last classification layer but maintain norm, relu and global avg pooling
+            self.classifier.module[-1] = nn.Sequential()
+        else:
+            self.classifier = nn.Sequential(*list(self.classifier.module.children())[:2])
         self._extract_features = True
         self._tmp_features = [None, ] * (len(self.features) + 1)  # we keep also the first input
         
