@@ -19,7 +19,7 @@ for EPS in ${EPSS[@]}; do
 for TOL in ${TOLS[@]}; do
 for P in inf 2; do
 
-# python adversarial/attack.py -t $TOL -e $EPS -d $P -s $STEP $1
+python adversarial/attack.py -t $TOL -e $EPS -d $P -s $STEP $1
 python adversarial/diff.py -t $TOL -e $EPS -d $P -s $STEP $1
 
 done
