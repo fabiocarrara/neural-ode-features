@@ -3,9 +3,11 @@
 Pytorch code for training and evaluating Neural ODEs image classifiers on MNIST and CIFAR-10 datasets.
 It reproduces experiments presented in the following papers:
 
-> \[1\] Carrara, F., Amato, G., Falchi, F. and Gennaro, C., 2019, September. Evaluation of Continuous Image Features Learned by ODE Nets. In *International Conference on Image Analysis and Processing* (pp. 432-442). Springer, Cham.
+> \[1\] Carrara, F., Amato, G., Falchi, F. and Gennaro, C., 2019, September. Evaluation of Continuous Image Features Learned by ODE Nets. In *International Conference on Image Analysis and Processing (ICIAP '19)* (pp. 432-442). Springer, Cham.
 > 
-> \[2\] Carrara, F., Caldelli, R., Falchi, F. and Amato, G., 2019, December. On the Robustness to Adversarial Examples of Neural ODE Image Classifiers. Accepted at the *2019 IEEE International Workshop on Information Forensics and Security*.
+> \[2\] Carrara, F., Amato, G., Falchi, F. and Gennaro, C., 2020, June. Continuous ODE-defined Image Features for Adaptive Retrieval. In *Proceedings of the 2020 International Conference on Multimedia Retrieval (ICMR '20)* (pp. 198-206). ACM.
+>
+> \[3\] Carrara, F., Caldelli, R., Falchi, F. and Amato, G., 2019, December. On the robustness to adversarial examples of neural ode image classifiers. In *2019 IEEE International Workshop on Information Forensics and Security (WIFS '19)* (pp. 1-6). IEEE.
 
 ## Getting Started
 
@@ -20,7 +22,7 @@ pip install torchvision foolbox h5py pandas tqdm seaborn sklearn
 
 ## Reproduce Experiments
 
-To obtain the trained models and reproduce the experiments described in \[1\], run
+To obtain the trained models and reproduce the experiments described in \[1\] and \[2\], run
 
 ```bash
 ./reproduce.sh
@@ -30,7 +32,7 @@ Pre-trained models are also available: [neural-ode-features-runs.zip (172MB)](ht
 
 ---
 
-To reproduce experiments described in \[2\], obtain the trained models, and then run
+To reproduce experiments described in \[3\], obtain the trained models, and then run
 
 ```bash
 cd adversarial
